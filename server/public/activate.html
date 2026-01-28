@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Activation - NUCash</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0F1227 0%, #181D40 50%, #1E2347 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: rgba(30, 35, 71, 0.95);
+            border-radius: 20px;
+            border: 2px solid rgba(255, 212, 28, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #181D40 0%, #0F1227 100%);
+            padding: 40px;
+            text-align: center;
+            border-bottom: 3px solid #FFD41C;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: #FFD41C;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            font-weight: 800;
+            color: #181D40;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #FFD41C;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: rgba(251, 251, 251, 0.7);
+            font-size: 16px;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 40px;
+            gap: 20px;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step-circle {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 212, 28, 0.1);
+            border: 2px solid rgba(255, 212, 28, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+            color: rgba(251, 251, 251, 0.5);
+            transition: all 0.3s;
+        }
+
+        .step-circle.active {
+            background: #FFD41C;
+            border-color: #FFD41C;
+            color: #181D40;
+            box-shadow: 0 0 20px rgba(255, 212, 28, 0.5);
+        }
+
+        .step-circle.completed {
+            background: #10B981;
+            border-color: #10B981;
+            color: white;
+        }
+
+        .step-label {
+            color: rgba(251, 251, 251, 0.5);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .step-label.active {
+            color: #FFD41C;
+        }
+
+        .step-label.completed {
+            color: #10B981;
+        }
+
+        .step-content {
+            display: none;
+        }
+
+        .step-content.active {
+            display: block;
+        }
+
+        .iframe-container {
+            width: 100%;
+            height: calc(100vh - 450px);
+            min-height: 400px;
+            max-height: 500px;
+            border: 2px solid rgba(255, 212, 28, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: white;
+        }
+
+        .iframe-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            color: #FFD41C;
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 16px;
+            background: rgba(251, 251, 251, 0.05);
+            border: 2px solid rgba(255, 212, 28, 0.3);
+            border-radius: 12px;
+            color: #FBFBFB;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 4px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #FFD41C;
+            background: rgba(251, 251, 251, 0.1);
+            box-shadow: 0 0 20px rgba(255, 212, 28, 0.2);
+        }
+
+        .form-input::placeholder {
+            color: rgba(251, 251, 251, 0.3);
+            letter-spacing: normal;
+        }
+
+        .button {
+            width: 100%;
+            padding: 16px;
+            background: #FFD41C;
+            color: #181D40;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .button:hover {
+            background: #FFC107;
+            box-shadow: 0 8px 24px rgba(255, 212, 28, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button:disabled {
+            background: rgba(255, 212, 28, 0.3);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .button-secondary {
+            background: rgba(255, 212, 28, 0.1);
+            color: #FFD41C;
+            border: 2px solid rgba(255, 212, 28, 0.3);
+        }
+
+        .button-secondary:hover {
+            background: rgba(255, 212, 28, 0.2);
+            border-color: #FFD41C;
+        }
+
+        .alert {
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert.success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 2px solid rgba(16, 185, 129, 0.3);
+            color: #10B981;
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 2px solid rgba(239, 68, 68, 0.3);
+            color: #EF4444;
+        }
+
+        .alert.info {
+            background: rgba(59, 130, 246, 0.15);
+            border: 2px solid rgba(59, 130, 246, 0.3);
+            color: #3B82F6;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 20px 0;
+            padding: 16px;
+            background: rgba(255, 212, 28, 0.1);
+            border: 2px solid rgba(255, 212, 28, 0.3);
+            border-radius: 12px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+        }
+
+        .checkbox-container label {
+            color: #FBFBFB;
+            font-size: 14px;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .success-icon {
+            font-size: 80px;
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .success-message {
+            text-align: center;
+            color: #FBFBFB;
+        }
+
+        .success-message h2 {
+            font-size: 32px;
+            color: #10B981;
+            margin-bottom: 20px;
+        }
+
+        .success-message p {
+            font-size: 16px;
+            color: rgba(251, 251, 251, 0.8);
+            margin-bottom: 30px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(24, 29, 64, 0.3);
+            border-top-color: #181D40;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .resend-link {
+            text-align: center;
+            margin-top: 20px;
+            color: rgba(251, 251, 251, 0.7);
+            font-size: 14px;
+        }
+
+        .resend-link button {
+            background: none;
+            border: none;
+            color: #FFD41C;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .resend-link button:hover {
+            background: rgba(255, 212, 28, 0.1);
+            color: #FFD41C;
+        }
+
+        .info-box {
+            background: rgba(59, 130, 246, 0.1);
+            border: 2px solid rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+            color: rgba(251, 251, 251, 0.8);
+            font-size: 14px;
+        }
+
+        .pin-strength {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .pin-strength.weak {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #EF4444;
+        }
+
+        .pin-strength.medium {
+            background: rgba(251, 191, 36, 0.15);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            color: #FBB036;
+        }
+
+        .pin-strength.strong {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10B981;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">NU</div>
+            <h1>Account Activation</h1>
+            <p>Welcome to NUCash System</p>
+        </div>
+
+        <div class="content">
+            <!-- Step Indicator -->
+            <div class="step-indicator">
+                <div class="step">
+                    <div class="step-circle active" id="step-circle-1">1</div>
+                    <div class="step-label active" id="step-label-1">Terms</div>
+                </div>
+                <div class="step">
+                    <div class="step-circle" id="step-circle-2">2</div>
+                    <div class="step-label" id="step-label-2">New PIN</div>
+                </div>
+                <div class="step">
+                    <div class="step-circle" id="step-circle-3">3</div>
+                    <div class="step-label" id="step-label-3">Verify</div>
+                </div>
+                <div class="step">
+                    <div class="step-circle" id="step-circle-4">4</div>
+                    <div class="step-label" id="step-label-4">Complete</div>
+                </div>
+            </div>
+
+            <!-- Alert -->
+            <div id="alert" class="alert"></div>
+
+            <!-- Step 1: Terms & Conditions -->
+            <div id="step-1" class="step-content active">
+                <h2 style="color: #FFD41C; margin-bottom: 20px;">Terms & Conditions</h2>
+                <p style="color: rgba(251, 251, 251, 0.8); margin-bottom: 20px;">
+                    Please read and accept our terms and conditions to continue.
+                </p>
+
+                <div class="iframe-container">
+                    <iframe id="terms-iframe" src=""></iframe>
+                </div>
+
+                <div class="checkbox-container">
+                    <input type="checkbox" id="accept-terms" />
+                    <label for="accept-terms">
+                        I have read and agree to the Terms and Conditions
+                    </label>
+                </div>
+
+                <button class="button" onclick="acceptTerms()" id="accept-btn" disabled>
+                    Continue to Set New PIN
+                </button>
+            </div>
+
+            <!-- Step 2: New PIN -->
+            <div id="step-2" class="step-content">
+                <h2 style="color: #FFD41C; margin-bottom: 20px;">Create New PIN</h2>
+                <div class="info-box">
+                    <strong>📌 PIN Requirements:</strong>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li>Must be exactly 6 digits</li>
+                        <li>Should not be easily guessable (avoid 123456, birthdays, etc.)</li>
+                        <li>Must be different from your default PIN</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">New PIN</label>
+                    <input type="password" id="new-pin" class="form-input" placeholder="Enter 6-digit PIN" maxlength="6" oninput="checkPinStrength()" />
+                    <div id="pin-strength" class="pin-strength" style="display: none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Confirm New PIN</label>
+                    <input type="password" id="confirm-pin" class="form-input" placeholder="Re-enter 6-digit PIN" maxlength="6" />
+                </div>
+
+                <button class="button" onclick="setNewPin()">
+                    <span id="set-pin-text">Set New PIN & Send OTP</span>
+                    <span id="set-pin-loading" style="display: none;"><span class="loading"></span></span>
+                </button>
+            </div>
+
+            <!-- Step 3: OTP Verification -->
+            <div id="step-3" class="step-content">
+                <h2 style="color: #FFD41C; margin-bottom: 20px;">Verify Your Email</h2>
+                <div class="info-box">
+                    <strong>📧 Verification Code Sent</strong><br>
+                    We've sent a 6-digit code to <strong id="user-email"></strong><br>
+                    The code will expire in 10 minutes.
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Enter OTP Code</label>
+                    <input type="text" id="otp-code" class="form-input" placeholder="000000" maxlength="6" />
+                </div>
+
+                <button class="button" onclick="verifyOTP()">
+                    <span id="verify-text">Verify & Activate Account</span>
+                    <span id="verify-loading" style="display: none;"><span class="loading"></span></span>
+                </button>
+
+                <div class="resend-link">
+                    Didn't receive the code? <button onclick="resendOTP()">Resend OTP</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Success -->
+            <div id="step-4" class="step-content">
+                <div class="success-icon">✅</div>
+                <div class="success-message">
+                    <h2>Account Activated!</h2>
+                    <p>
+                        Congratulations! Your account has been successfully activated.<br>
+                        You can now log in with your new PIN.
+                    </p>
+                    <button class="button" onclick="goToLogin()">
+                        Go to Login
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const accountId = urlParams.get('accountId');
+        const accountType = urlParams.get('accountType') || 'admin';
+        const email = urlParams.get('email');
+
+        console.log('Activation page loaded with:', { accountId, accountType, email });
+
+        let currentStep = 1;
+
+        // Set terms URL based on account type
+        document.getElementById('terms-iframe').src = accountType === 'admin'
+            ? '/terms-and-conditions-admin.html'
+            : '/terms-and-conditions-user.html';
+
+        // Enable accept button when checkbox is checked
+        document.getElementById('accept-terms').addEventListener('change', function() {
+            document.getElementById('accept-btn').disabled = !this.checked;
+        });
+
+        function showAlert(type, message) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert ${type} show`;
+            alert.textContent = message;
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        function updateStepIndicator(step) {
+            // Update all steps
+            for (let i = 1; i <= 4; i++) {
+                const circle = document.getElementById(`step-circle-${i}`);
+                const label = document.getElementById(`step-label-${i}`);
+
+                if (i < step) {
+                    circle.className = 'step-circle completed';
+                    circle.textContent = '✓';
+                    label.className = 'step-label completed';
+                } else if (i === step) {
+                    circle.className = 'step-circle active';
+                    circle.textContent = i;
+                    label.className = 'step-label active';
+                } else {
+                    circle.className = 'step-circle';
+                    circle.textContent = i;
+                    label.className = 'step-label';
+                }
+            }
+        }
+
+        function goToStep(step) {
+            // Hide all steps
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById(`step-${i}`).classList.remove('active');
+            }
+
+            // Show current step
+            document.getElementById(`step-${step}`).classList.add('active');
+            currentStep = step;
+            updateStepIndicator(step);
+
+            // Scroll to top
+            window.scrollTo(0, 0);
+        }
+
+        async function acceptTerms() {
+            try {
+                const response = await fetch('/api/activation/accept-terms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId, accountType })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('success', 'Terms accepted successfully!');
+                    setTimeout(() => goToStep(2), 1000);
+                } else {
+                    showAlert('error', data.error || 'Failed to accept terms');
+                }
+            } catch (error) {
+                console.error('Accept terms error:', error);
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        function checkPinStrength() {
+            const pin = document.getElementById('new-pin').value;
+            const strengthDiv = document.getElementById('pin-strength');
+
+            if (pin.length === 0) {
+                strengthDiv.style.display = 'none';
+                return;
+            }
+
+            strengthDiv.style.display = 'block';
+
+            // Check for weak PINs
+            const weakPatterns = ['123456', '654321', '111111', '000000', '123123'];
+            if (weakPatterns.includes(pin)) {
+                strengthDiv.className = 'pin-strength weak';
+                strengthDiv.textContent = '⚠️ Weak PIN - Too easy to guess!';
+                return;
+            }
+
+            // Check for repeated digits
+            if (/^(\d)\1{5}$/.test(pin)) {
+                strengthDiv.className = 'pin-strength weak';
+                strengthDiv.textContent = '⚠️ Weak PIN - All same digits!';
+                return;
+            }
+
+            // Check for sequential
+            if (pin.length === 6) {
+                const isSequential = Array.from(pin).every((digit, i, arr) => {
+                    if (i === 0) return true;
+                    return Math.abs(parseInt(digit) - parseInt(arr[i-1])) === 1;
+                });
+
+                if (isSequential) {
+                    strengthDiv.className = 'pin-strength medium';
+                    strengthDiv.textContent = '⚡ Medium PIN - Sequential numbers';
+                    return;
+                }
+
+                strengthDiv.className = 'pin-strength strong';
+                strengthDiv.textContent = '✅ Strong PIN - Good choice!';
+            }
+        }
+
+        async function setNewPin() {
+            const newPin = document.getElementById('new-pin').value;
+            const confirmPin = document.getElementById('confirm-pin').value;
+
+            // Validation
+            if (!newPin || !confirmPin) {
+                showAlert('error', 'Please enter and confirm your new PIN');
+                return;
+            }
+
+            if (!/^\d{6}$/.test(newPin)) {
+                showAlert('error', 'PIN must be exactly 6 digits');
+                return;
+            }
+
+            if (newPin !== confirmPin) {
+                showAlert('error', 'PINs do not match');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('set-pin-text').style.display = 'none';
+            document.getElementById('set-pin-loading').style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/api/activation/set-new-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId, accountType, newPin })
+                });
+
+                const data = await response.json();
+
+                // Hide loading
+                document.getElementById('set-pin-text').style.display = 'inline-block';
+                document.getElementById('set-pin-loading').style.display = 'none';
+
+                if (response.ok) {
+                    document.getElementById('user-email').textContent = data.email;
+                    showAlert('success', 'PIN updated! OTP sent to your email.');
+                    setTimeout(() => goToStep(3), 1500);
+                } else {
+                    showAlert('error', data.error || 'Failed to set new PIN');
+                }
+            } catch (error) {
+                console.error('Set PIN error:', error);
+                document.getElementById('set-pin-text').style.display = 'inline-block';
+                document.getElementById('set-pin-loading').style.display = 'none';
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        async function verifyOTP() {
+            const otp = document.getElementById('otp-code').value;
+
+            if (!otp || !/^\d{6}$/.test(otp)) {
+                showAlert('error', 'Please enter a valid 6-digit OTP');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('verify-text').style.display = 'none';
+            document.getElementById('verify-loading').style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/api/activation/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId, accountType, otp })
+                });
+
+                const data = await response.json();
+
+                // Hide loading
+                document.getElementById('verify-text').style.display = 'inline-block';
+                document.getElementById('verify-loading').style.display = 'none';
+
+                if (response.ok) {
+                    showAlert('success', 'Account activated successfully!');
+                    setTimeout(() => goToStep(4), 1500);
+                } else {
+                    showAlert('error', data.error || 'Invalid OTP');
+                }
+            } catch (error) {
+                console.error('Verify OTP error:', error);
+                document.getElementById('verify-text').style.display = 'inline-block';
+                document.getElementById('verify-loading').style.display = 'none';
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        async function resendOTP() {
+            try {
+                const response = await fetch('/api/activation/resend-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId, accountType })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('success', 'New OTP sent to your email!');
+                } else {
+                    showAlert('error', data.error || 'Failed to resend OTP');
+                }
+            } catch (error) {
+                console.error('Resend OTP error:', error);
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        async function goToLogin() {
+            // Auto-login with new PIN
+            const newPin = document.getElementById('new-pin').value;
+
+            if (!newPin || !email) {
+                // Fallback: just redirect to login
+                window.location.href = accountType === 'admin' ? 'http://localhost:5173/admin' : '/';
+                return;
+            }
+
+            try {
+                // Attempt auto-login
+                const response = await fetch('/api/admin/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, pin: newPin })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.token) {
+                    // Store token and admin data
+                    localStorage.setItem('adminToken', data.token);
+                    localStorage.setItem('adminData', JSON.stringify(data.admin));
+
+                    // Redirect based on role
+                    const dashboardMap = {
+                        'motorpool': '/admin/motorpool/dashboard',
+                        'merchant': '/admin/merchant/dashboard',
+                        'treasury': '/admin/treasury/dashboard',
+                        'accounting': '/admin/accounting/dashboard',
+                        'sysad': '/admin/sysad/dashboard'
+                    };
+
+                    const dashboard = dashboardMap[data.admin.role] || '/admin/motorpool/dashboard';
+                    window.location.href = `http://localhost:5173${dashboard}`;
+                } else {
+                    // Login failed, redirect to login page
+                    window.location.href = 'http://localhost:5173/admin';
+                }
+            } catch (error) {
+                console.error('Auto-login error:', error);
+                // Fallback to login page
+                window.location.href = 'http://localhost:5173/admin';
+            }
+        }
+
+        // Validate accountId is present
+        if (!accountId) {
+            showAlert('error', 'Invalid activation link. Please login again.');
+            setTimeout(() => goToLogin(), 3000);
+        }
+    </script>
+</body>
+</html>

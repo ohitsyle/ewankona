@@ -1,0 +1,376 @@
+// src/merchant/components/Dashboard/Dashboard.jsx
+// Main dashboard - Simplified for merchant management only (transactions handled by different admin)
+
+import React, { useState, useEffect } from 'react';
+
+export default function Dashboard({ merchantData, onNavigate }) {
+  const [merchantStats, setMerchantStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMerchantStats();
+  }, []);
+
+  const loadMerchantStats = async () => {
+    try {
+      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      const token = localStorage.getItem('merchantToken');
+
+      const response = await fetch(`${API_URL}/api/merchant/stats`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) throw new Error('Failed to load stats');
+      const data = await response.json();
+      setMerchantStats(data);
+    } catch (error) {
+      console.error('Error loading merchant stats:', error);
+      // Set default values if API fails
+      setMerchantStats({
+        totalMerchants: 0,
+        activeMerchants: 0,
+        inactiveMerchants: 0,
+        recentMerchants: []
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '400px',
+        color: '#FFD41C'
+      }}>
+        <div style={{
+          width: '40px',
+          height: '40px',
+          border: '4px solid rgba(255, 212, 28, 0.3)',
+          borderTopColor: '#FFD41C',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Welcome Section */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)',
+        borderRadius: '16px',
+        border: '2px solid rgba(255, 212, 28, 0.3)',
+        padding: '32px',
+        marginBottom: '24px'
+      }}>
+        <h2 style={{
+          fontSize: '28px',
+          fontWeight: 700,
+          color: '#FBFBFB',
+          margin: '0 0 8px 0'
+        }}>
+          Welcome back, {merchantData?.businessName || merchantData?.firstName || 'Admin'}! 👋
+        </h2>
+        <p style={{
+          fontSize: '14px',
+          color: 'rgba(251, 251, 251, 0.6)',
+          margin: 0
+        }}>
+          Manage your merchant network and monitor merchant activity.
+        </p>
+      </div>
+
+      {/* Merchant Stats Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gap: '20px',
+        marginBottom: '32px'
+      }}>
+        <StatCard
+          icon="🏪"
+          label="Total Merchants"
+          value={merchantStats?.totalMerchants || 0}
+          color="#FFD41C"
+        />
+        <StatCard
+          icon="✅"
+          label="Active Merchants"
+          value={merchantStats?.activeMerchants || 0}
+          color="#22C55E"
+        />
+        <StatCard
+          icon="⏸️"
+          label="Inactive Merchants"
+          value={merchantStats?.inactiveMerchants || 0}
+          color="#EF4444"
+        />
+      </div>
+
+      {/* Recently Added Merchants - Scrollable Area */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)',
+        borderRadius: '16px',
+        border: '2px solid rgba(255, 212, 28, 0.3)',
+        padding: '24px'
+      }}>
+        <h3 style={{
+          fontSize: '18px',
+          fontWeight: 700,
+          color: '#FBFBFB',
+          margin: '0 0 20px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <span>🆕</span>
+          Recently Added Merchants
+        </h3>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          {merchantStats?.recentMerchants && merchantStats.recentMerchants.length > 0 ? (
+            merchantStats.recentMerchants.slice(0, 5).map((merchant, index) => (
+              <div key={merchant._id || index} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '16px',
+                background: 'rgba(255, 212, 28, 0.05)',
+                border: '1px solid rgba(255, 212, 28, 0.2)',
+                borderRadius: '10px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    background: 'linear-gradient(135deg, #FFD41C 0%, #F59E0B 100%)',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    color: '#181D40'
+                  }}>
+                    🏪
+                  </div>
+                  <div>
+                    <div style={{
+                      color: '#FBFBFB',
+                      fontWeight: 600,
+                      fontSize: '15px',
+                      marginBottom: '4px'
+                    }}>
+                      {merchant.businessName || 'Merchant'}
+                    </div>
+                    <div style={{
+                      color: 'rgba(251, 251, 251, 0.6)',
+                      fontSize: '12px'
+                    }}>
+                      {merchant.email}
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <span style={{
+                    padding: '4px 12px',
+                    background: merchant.isActive
+                      ? 'rgba(34, 197, 94, 0.15)'
+                      : 'rgba(239, 68, 68, 0.15)',
+                    border: `1px solid ${merchant.isActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                    borderRadius: '20px',
+                    color: merchant.isActive ? '#22C55E' : '#EF4444',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {merchant.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <span style={{
+                    fontSize: '11px',
+                    color: 'rgba(251, 251, 251, 0.5)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {merchant.createdAt
+                      ? new Date(merchant.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })
+                      : 'Recently'}
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div style={{
+              textAlign: 'center',
+              padding: '40px 20px',
+              color: 'rgba(251, 251, 251, 0.5)',
+              fontSize: '14px'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.3 }}>🏪</div>
+              <div>No merchants added yet</div>
+              <div style={{ fontSize: '12px', marginTop: '8px' }}>
+                Navigate to the Merchants tab to add new merchants
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      </div>
+
+      {/* Fixed Quick Actions - Not scrollable */}
+      <div style={{
+        marginTop: '24px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px'
+      }}>
+        <QuickActionCard
+          icon="🏪"
+          title="Manage Merchants"
+          description="View and manage all merchants"
+          onClick={() => onNavigate && onNavigate('merchants')}
+        />
+        <QuickActionCard
+          icon="📋"
+          title="View Logs"
+          description="Check system activity logs"
+          onClick={() => onNavigate && onNavigate('logs')}
+        />
+        <QuickActionCard
+          icon="⚙️"
+          title="Configurations"
+          description="Adjust system settings"
+          onClick={() => onNavigate && onNavigate('configurations')}
+        />
+      </div>
+
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, color }) {
+  return (
+    <div style={{
+      background: 'rgba(255, 255, 255, 0.05)',
+      padding: '24px',
+      borderRadius: '16px',
+      border: '1px solid rgba(255, 212, 28, 0.2)',
+      position: 'relative',
+      overflow: 'hidden',
+      transition: 'all 0.3s ease'
+    }}>
+      <div style={{
+        position: 'absolute',
+        right: '16px',
+        top: '16px',
+        fontSize: '40px',
+        opacity: 0.15
+      }}>
+        {icon}
+      </div>
+      <div style={{
+        fontSize: '11px',
+        color: 'rgba(251, 251, 251, 0.6)',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        marginBottom: '12px'
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: '32px',
+        fontWeight: 800,
+        color: '#FBFBFB',
+        marginBottom: '8px'
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: '12px',
+        color: color,
+        fontWeight: 600,
+        display: 'inline-block',
+        padding: '3px 10px',
+        borderRadius: '12px',
+        background: `${color}20`
+      }}>
+        {value > 0 ? 'merchants' : 'none'}
+      </div>
+    </div>
+  );
+}
+
+function QuickActionCard({ icon, title, description, onClick }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        background: isHovered
+          ? 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)'
+          : 'rgba(30, 35, 71, 0.4)',
+        border: '2px solid rgba(255, 212, 28, 0.3)',
+        borderRadius: '12px',
+        padding: '20px',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
+        boxShadow: isHovered
+          ? '0 8px 24px rgba(255, 212, 28, 0.2)'
+          : '0 2px 8px rgba(0, 0, 0, 0.1)'
+      }}
+    >
+      <div style={{
+        fontSize: '32px',
+        marginBottom: '12px'
+      }}>
+        {icon}
+      </div>
+      <div style={{
+        fontSize: '15px',
+        fontWeight: 700,
+        color: '#FFD41C',
+        marginBottom: '6px'
+      }}>
+        {title}
+      </div>
+      <div style={{
+        fontSize: '12px',
+        color: 'rgba(251, 251, 251, 0.6)',
+        lineHeight: '1.5'
+      }}>
+        {description}
+      </div>
+    </div>
+  );
+}

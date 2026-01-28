@@ -1,0 +1,70 @@
+
+> nucash-server@3.0.0 start
+> node scripts/update-ip.mjs && node server.js
+
+
+🔍 Detecting local IP address...
+📍 Detected IP: 172.20.10.2
+
+🔄 Updating configuration files...
+❌ .env file not found
+❌ Mobile config file not found
+
+✅ Configuration updated successfully!
+
+📱 Mobile app will connect to: http://172.20.10.2:3000/api
+💡 Restart your React Native app to pick up the new IP
+
+🔑 Merchant admin JWT_SECRET: nucash_secret_2025
+✅ Email service loaded
+📧 sendReceipt available: true
+📧 sendRefundReceipt available: true
+✅ ShuttlePosition model loaded
+(node:83988) [MONGOOSE] Warning: Duplicate schema index on {"shuttleId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🚀 NUCash Server Started!
+┌────────────────────────────────────────┐
+│ 📱 Mobile API:        http://localhost:3000/api
+│ 🌐 Network Access:    http://172.20.10.2:3000/api
+│ 🖥️  Admin Dashboard:   http://localhost:3000/admin
+│ 🚌 Motorpool Admin:   http://localhost:3000/motorpool
+│ 💚 Health Check:      http://localhost:3000/health
+│ 🧪 Test Endpoint:     http://localhost:3000/api/test
+└────────────────────────────────────────┘
+
+✅ Available Endpoints:
+   Mobile App:
+   - GET  /api/user/balance/:rfidUid
+   - POST /api/driver/login
+   - POST /api/shuttle/pay
+   - POST /api/merchant/pay
+   - GET  /api/geofences
+   - GET  /api/system/config
+   - GET  /api/routes
+   - GET  /api/shuttles/available
+   - POST /api/trips/start
+   - GET  /api/analytics/dashboard
+   - GET  /api/logs
+
+   Admin Dashboard:
+   - GET  /api/admin/analytics
+   - GET  /api/admin/drivers
+   - POST /api/admin/drivers
+   - PUT  /api/admin/drivers/:id
+   - GET  /api/admin/shuttles
+   - GET  /api/admin/routes
+   - GET  /api/admin/phones
+   - GET  /api/admin/event-logs
+   - GET  /api/admin/user-concerns
+┌────────────────────────────────────────┐
+│ Schema v3.0 - ES6 Modules              │
+└────────────────────────────────────────┘
+
+✅ MongoDB connected
+[Auto-Export] Initializing auto-export cron job...
+[Auto-Export] Cron job scheduled to run every minute
+[Auto-Export] Checking for scheduled exports...
+[Auto-Export] Checking for scheduled exports...
+⚠️  SIGTERM received, closing server...
+✅ MongoDB connection closed

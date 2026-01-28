@@ -1,0 +1,25 @@
+{
+  "name": "nucash-mobile-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client/admin",
+    "client/merchant",
+    "client/mobile",
+    "server"
+  ],
+  "scripts": {
+    "admin:dev": "npm start --workspace=client/admin",
+    "admin:build": "npm run build --workspace=client/admin",
+    "merchant:dev": "npm start --workspace=client/merchant",
+    "merchant:build": "npm run build --workspace=client/merchant",
+    "mobile:start": "npm start --workspace=client/mobile",
+    "mobile:android": "npm run android --workspace=client/mobile",
+    "mobile:ios": "npm run ios --workspace=client/mobile",
+    "server:dev": "npm start --workspace=server",
+    "server:start": "npm start --workspace=server",
+    "install:all": "npm install && npm install --workspaces"
+  },
+  "devDependencies": {},
+  "description": "NUCash Mobile - Monorepo workspace for admin dashboard, merchant dashboard, mobile app, and backend server"
+}

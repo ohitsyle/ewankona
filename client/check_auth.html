@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Auth</title>
+</head>
+<body>
+    <h1>LocalStorage Check</h1>
+    <pre id="output"></pre>
+    <script>
+        const output = document.getElementById('output');
+        const data = {
+            userToken: localStorage.getItem('userToken'),
+            userData: localStorage.getItem('userData'),
+            adminToken: localStorage.getItem('adminToken'),
+            adminData: localStorage.getItem('adminData'),
+            allKeys: Object.keys(localStorage)
+        };
+        output.textContent = JSON.stringify(data, null, 2);
+    </script>
+</body>
+</html>

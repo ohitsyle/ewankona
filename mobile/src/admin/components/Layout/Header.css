@@ -1,0 +1,128 @@
+/* src/admin/components/Layout/Header.css */
+
+.header {
+  background: linear-gradient(135deg, #181D40 0%, #0f1227 100%);
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #FFD41C;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.logo {
+  width: 45px;
+  height: 45px;
+  background: #FFD41C;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: #181D40;
+  box-shadow: 0 0 0 3px rgba(255, 212, 28, 0.2);
+}
+
+.headerTitle h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(251, 251, 251, 0.95);
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.headerTitle p {
+  font-size: 12px;
+  color: #FFD41C;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 2px 0 0 0;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.liveIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(34, 197, 94, 0.2);
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.liveDot {
+  width: 7px;
+  height: 7px;
+  background: #22C55E;
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.liveIndicator span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #22C55E;
+}
+
+.adminBadge {
+  width: 40px;
+  height: 40px;
+  background: #FFD41C;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  color: #181D40;
+  box-shadow: 0 0 0 3px rgba(255, 212, 28, 0.2);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.adminBadge:hover {
+  transform: scale(1.05);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 15px;
+    padding: 16px 20px;
+  }
+  
+  .headerTitle h1 {
+    font-size: 18px;
+  }
+  
+  .headerTitle p {
+    font-size: 10px;
+  }
+}

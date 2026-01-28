@@ -1,0 +1,192 @@
+// src/admin/components/Logs/LogsList.jsx
+// Enhanced with pagination and detail view
+import React, { useState, useEffect } from 'react';
+import api from '../../services/api';
+import SearchBar from '../common/SearchBar';
+import ExportButton from '../common/ExportButton';
+import StatusFilter from '../common/StatusFilter';
+import DateRangeFilter from '../common/DateRangeFilter';
+import { exportToCSV, prepareDataForExport} from '../../utils/csvExport';
+import LogDetailModal from './LogDetailModal';
+
+export default function LogsList() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const logsPerPage = 20;
+
+  const loadLogs = async () => {
+    try {
+      const data = await api.get('/admin/event-logs');
+      setLogs(data || []);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading logs:', error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLogs();
+    const interval = setInterval(loadLogs, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleExport = () => {
+    const dataToExport = prepareDataForExport(filteredLogs);
+    exportToCSV(dataToExport, 'event-logs');
+  };
+
+  const filteredLogs = logs.filter(log => {
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = (
+        log.eventType?.toLowerCase().includes(searchLower) ||
+        log.type?.toLowerCase().includes(searchLower) ||
+        log.title?.toLowerCase().includes(searchLower) ||
+        log.description?.toLowerCase().includes(searchLower) ||
+        log.message?.toLowerCase().includes(searchLower) ||
+        log.severity?.toLowerCase().includes(searchLower) ||
+        new Date(log.timestamp).toLocaleString().toLowerCase().includes(searchLower)
+      );
+      if (!matchesSearch) return false;
+    }
+    if (severityFilter && log.severity !== severityFilter) return false;
+    if (typeFilter && (log.eventType || log.type) !== typeFilter) return false;
+    if (startDate || endDate) {
+      const logDate = new Date(log.timestamp);
+      if (startDate && logDate < new Date(startDate)) return false;
+      if (endDate && logDate > new Date(endDate + 'T23:59:59')) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
+  const startIndex = (currentPage - 1) * logsPerPage;
+  const endIndex = startIndex + logsPerPage;
+  const currentLogs = filteredLogs.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, severityFilter, typeFilter, startDate, endDate]);
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: '60px', color: '#FFD41C' }}>Loading logs...</div>;
+  }
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: '30px', borderBottom: '2px solid rgba(255,212,28,0.2)', paddingBottom: '20px' }}>
+        <div style={{ marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#FFD41C', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>📋</span> System Event Logs
+          </h2>
+          <p style={{ fontSize: '13px', color: 'rgba(251,251,251,0.6)', margin: 0 }}>
+            Showing {filteredLogs.length} logs • Page {currentPage} of {Math.max(1, totalPages)}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search logs..." />
+          <StatusFilter value={severityFilter} onChange={setSeverityFilter} label="Severity"
+            options={[{ value: 'info', label: 'Info' }, { value: 'warning', label: 'Warning' }, { value: 'error', label: 'Error' }]} />
+          <StatusFilter value={typeFilter} onChange={setTypeFilter} label="Type"
+            options={[{ value: 'admin_action', label: 'Admin Action' }, { value: 'system_event', label: 'System Event' }, { value: 'user_action', label: 'User Action' }]} />
+          <DateRangeFilter startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+          <ExportButton onClick={handleExport} disabled={filteredLogs.length === 0} />
+        </div>
+      </div>
+
+      {/* Scrollable Area */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
+      {filteredLogs.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px', color: 'rgba(251,251,251,0.5)' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+          <div>No logs found</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid rgba(255,212,28,0.2)', marginBottom: '20px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: 'rgba(255,212,28,0.1)' }}>
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Timestamp</th>
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Type</th>
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Title</th>
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Description</th>
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Severity</th>
+                  <th style={{ textAlign: 'center', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentLogs.map((log, index) => (
+                  <tr key={log._id || index} style={{ borderBottom: '1px solid rgba(255,212,28,0.1)' }}>
+                    <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                    <td style={{ padding: '16px' }}>
+                      <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
+                        background: log.eventType === 'admin_action' ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)',
+                        color: log.eventType === 'admin_action' ? '#3B82F6' : '#A855F7' }}>
+                        {log.eventType || log.type}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)', fontWeight: 600 }}>{log.title || 'N/A'}</td>
+                    <td style={{ padding: '16px', color: 'rgba(251,251,251,0.7)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {log.description || log.message || 'N/A'}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
+                        background: log.severity === 'warning' ? 'rgba(251,191,36,0.2)' : log.severity === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)',
+                        color: log.severity === 'warning' ? '#FBBF24' : log.severity === 'error' ? '#EF4444' : '#22C55E' }}>
+                        {log.severity || 'info'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px', textAlign: 'center' }}>
+                      <button onClick={() => setSelectedLog(log)}
+                        style={{ padding: '6px 14px', background: 'rgba(255,212,28,0.15)', border: '2px solid rgba(255,212,28,0.3)', borderRadius: '8px',
+                          color: '#FFD41C', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px',
+              background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,212,28,0.2)' }}>
+              <div style={{ fontSize: '13px', color: 'rgba(251,251,251,0.6)' }}>
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredLogs.length)} of {filteredLogs.length}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}
+                  style={{ padding: '8px 16px', background: currentPage === 1 ? 'rgba(255,255,255,0.05)' : 'rgba(255,212,28,0.15)',
+                    border: '2px solid rgba(255,212,28,0.3)', borderRadius: '8px',
+                    color: currentPage === 1 ? 'rgba(251,251,251,0.3)' : '#FFD41C', fontSize: '12px', fontWeight: 600,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>
+                  Previous
+                </button>
+                <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}
+                  style={{ padding: '8px 16px', background: currentPage === totalPages ? 'rgba(255,255,255,0.05)' : 'rgba(255,212,28,0.15)',
+                    border: '2px solid rgba(255,212,28,0.3)', borderRadius: '8px',
+                    color: currentPage === totalPages ? 'rgba(251,251,251,0.3)' : '#FFD41C', fontSize: '12px', fontWeight: 600,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      </div>
+
+      {selectedLog && <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />}
+    </div>
+  );
+}

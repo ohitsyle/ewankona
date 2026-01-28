@@ -1,0 +1,487 @@
+// src/admin/components/Concerns/ConcernsList.jsx
+// FIXED: Using correct endpoint /admin/user-concerns instead of /user-concerns
+import React, { useState, useEffect } from 'react';
+import api from '../../../utils/api';
+import SearchBar from '../../../components/shared/SearchBar';
+import ExportButton from '../../../components/shared/ExportButton';
+import StatusFilter from '../../../components/shared/StatusFilter';
+import DateRangeFilter from '../../../components/shared/DateRangeFilter';
+import ConcernDetailModal from '../../../components/modals/ConcernDetailModal';
+import { exportToCSV, prepareDataForExport } from '../../../utils/csvExport';
+
+export default function ConcernsList() {
+  const [concerns, setConcerns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [alert, setAlert] = useState(null);
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'assistance', 'feedback'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedConcern, setSelectedConcern] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  const loadConcerns = async () => {
+    try {
+      // FIXED: Changed from '/user-concerns' to '/admin/user-concerns'
+      const data = await api.get('/admin/user-concerns');
+      setConcerns(data || []);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading concerns:', error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConcerns();
+    const interval = setInterval(loadConcerns, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStatusChange = async (concern, newStatus) => {
+    try {
+      await api.patch(`/admin/user-concerns/${concern._id}/status`, { status: newStatus });
+      setAlert({ type: 'success', message: 'Status updated!' });
+      loadConcerns();
+      setTimeout(() => setAlert(null), 2000);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      setAlert({ type: 'error', message: 'Failed to update status' });
+    }
+  };
+
+  const handleExport = () => {
+    const dataToExport = prepareDataForExport(filteredConcerns);
+    exportToCSV(dataToExport, 'concerns');
+  };
+
+  const filteredConcerns = concerns.filter(concern => {
+    // Tab filter - filter by submissionType
+    if (activeTab === 'assistance' && concern.submissionType !== 'assistance') return false;
+    if (activeTab === 'feedback' && concern.submissionType !== 'feedback') return false;
+
+    // Search filter
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = (
+        concern.concernId?.toLowerCase().includes(searchLower) ||
+        concern._id?.toLowerCase().includes(searchLower) ||
+        concern.userName?.toLowerCase().includes(searchLower) ||
+        concern.userId?.toLowerCase().includes(searchLower) ||
+        concern.title?.toLowerCase().includes(searchLower) ||
+        concern.description?.toLowerCase().includes(searchLower) ||
+        concern.category?.toLowerCase().includes(searchLower) ||
+        concern.subject?.toLowerCase().includes(searchLower) ||
+        concern.feedbackText?.toLowerCase().includes(searchLower) ||
+        concern.priority?.toLowerCase().includes(searchLower) ||
+        concern.status?.toLowerCase().includes(searchLower)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // Status filter
+    if (statusFilter && concern.status !== statusFilter) return false;
+
+    // Priority filter
+    if (priorityFilter && concern.priority !== priorityFilter) return false;
+
+    // Category filter
+    if (categoryFilter && concern.category !== categoryFilter) return false;
+
+    // Date range filter
+    if (startDate || endDate) {
+      const concernDate = new Date(concern.submittedAt || concern.createdAt);
+      if (startDate && concernDate < new Date(startDate)) return false;
+      if (endDate && concernDate > new Date(endDate + 'T23:59:59')) return false;
+    }
+
+    return true;
+  });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredConcerns.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentItems = filteredConcerns.slice(startIndex, endIndex);
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter, categoryFilter, startDate, endDate, activeTab]);
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: '60px', color: '#FFD41C' }}>Loading concerns...</div>;
+  }
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Alert */}
+      {alert && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          padding: '16px 24px',
+          borderRadius: '8px',
+          background: alert.type === 'success' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)',
+          color: alert.type === 'success' ? '#22C55E' : '#EF4444',
+          border: `2px solid ${alert.type === 'success' ? '#22C55E' : '#EF4444'}`,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          zIndex: 10000,
+        }}>
+          {alert.message}
+        </div>
+      )}
+
+      <div style={{ marginBottom: '30px', borderBottom: '2px solid rgba(255,212,28,0.2)', paddingBottom: '20px' }}>
+        <div style={{ marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#FFD41C', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>📢</span> User Concerns
+          </h2>
+          <p style={{ fontSize: '13px', color: 'rgba(251,251,251,0.6)', margin: 0 }}>
+            {filteredConcerns.length > 0
+              ? `Showing ${startIndex + 1}-${Math.min(endIndex, filteredConcerns.length)} of ${filteredConcerns.length} • Page ${currentPage} of ${totalPages}`
+              : `Support tickets and feedback • Total: ${concerns.length}`
+            }
+          </p>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          <button
+            onClick={() => setActiveTab('all')}
+            style={{
+              padding: '10px 20px',
+              background: activeTab === 'all' ? 'rgba(255,212,28,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'all' ? '#FFD41C' : 'rgba(255,212,28,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'all' ? '#FFD41C' : 'rgba(251,251,251,0.6)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            All ({concerns.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('assistance')}
+            style={{
+              padding: '10px 20px',
+              background: activeTab === 'assistance' ? 'rgba(59,130,246,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'assistance' ? '#3B82F6' : 'rgba(59,130,246,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'assistance' ? '#3B82F6' : 'rgba(251,251,251,0.6)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            🆘 Assistance ({concerns.filter(c => c.submissionType === 'assistance').length})
+          </button>
+          <button
+            onClick={() => setActiveTab('feedback')}
+            style={{
+              padding: '10px 20px',
+              background: activeTab === 'feedback' ? 'rgba(34,197,94,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'feedback' ? '#22C55E' : 'rgba(34,197,94,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'feedback' ? '#22C55E' : 'rgba(251,251,251,0.6)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            💬 Feedback ({concerns.filter(c => c.submissionType === 'feedback').length})
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by ID, user, title, category, or status..."
+          />
+          <StatusFilter
+            value={statusFilter}
+            onChange={setStatusFilter}
+            label="Status"
+            options={[
+              { value: 'pending', label: 'Pending' },
+              { value: 'in_progress', label: 'In Progress' },
+              { value: 'resolved', label: 'Resolved' },
+              { value: 'closed', label: 'Closed' }
+            ]}
+          />
+          <StatusFilter
+            value={priorityFilter}
+            onChange={setPriorityFilter}
+            label="Priority"
+            options={[
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'urgent', label: 'Urgent' }
+            ]}
+          />
+          <StatusFilter
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            label="Category"
+            options={[
+              { value: 'payment_issue', label: 'Payment Issue' },
+              { value: 'driver_complaint', label: 'Driver Complaint' },
+              { value: 'shuttle_issue', label: 'Shuttle Issue' },
+              { value: 'technical_problem', label: 'Technical Problem' },
+              { value: 'safety_concern', label: 'Safety Concern' },
+              { value: 'route_suggestion', label: 'Route Suggestion' },
+              { value: 'billing_dispute', label: 'Billing Dispute' },
+              { value: 'lost_item', label: 'Lost Item' },
+              { value: 'other', label: 'Other' }
+            ]}
+          />
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartChange={setStartDate}
+            onEndChange={setEndDate}
+          />
+          <ExportButton onClick={handleExport} disabled={filteredConcerns.length === 0} />
+        </div>
+      </div>
+
+      {/* Scrollable Area */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
+      {concerns.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px', color: 'rgba(251,251,251,0.5)' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📢</div>
+          <div>No concerns found</div>
+        </div>
+      ) : filteredConcerns.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px', color: 'rgba(251,251,251,0.5)' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+          <div style={{ marginBottom: '12px' }}>No concerns match your search</div>
+          <button onClick={() => setSearchQuery('')} style={{
+            padding: '8px 16px',
+            background: 'rgba(255,212,28,0.15)',
+            border: '2px solid rgba(255,212,28,0.3)',
+            borderRadius: '8px',
+            color: '#FFD41C',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}>
+            Clear Search
+          </button>
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid rgba(255,212,28,0.2)' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,212,28,0.1)' }}>
+                <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>ID</th>
+                <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>User</th>
+                <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Subject</th>
+                {activeTab === 'all' && (
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Type</th>
+                )}
+                {activeTab === 'feedback' && (
+                  <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Rating</th>
+                )}
+                {activeTab !== 'feedback' && (
+                  <>
+                    <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Priority</th>
+                    <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Status</th>
+                  </>
+                )}
+                <th style={{ textAlign: 'left', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Date</th>
+                <th style={{ textAlign: 'right', padding: '16px', fontSize: '11px', fontWeight: 800, color: '#FFD41C', textTransform: 'uppercase', borderBottom: '2px solid rgba(255,212,28,0.3)' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentItems.map((concern) => (
+                <tr key={concern._id} style={{ borderBottom: '1px solid rgba(255,212,28,0.1)' }}>
+                  <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)' }}>
+                    <strong>{concern.concernId || concern._id.slice(-6)}</strong>
+                  </td>
+                  <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)' }}>
+                    {concern.userName || 'N/A'}
+                  </td>
+                  <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)' }}>
+                    {concern.subject ||
+                     (concern.selectedConcerns && concern.selectedConcerns.length > 0
+                       ? `${concern.selectedConcerns[0]}${concern.selectedConcerns.length > 1 ? ` +${concern.selectedConcerns.length - 1}` : ''}`
+                       : 'N/A')}
+                  </td>
+                  {activeTab === 'all' && (
+                    <td style={{ padding: '16px' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        background: concern.submissionType === 'assistance' ? 'rgba(59,130,246,0.2)' : 'rgba(34,197,94,0.2)',
+                        color: concern.submissionType === 'assistance' ? '#3B82F6' : '#22C55E',
+                        border: `1px solid ${concern.submissionType === 'assistance' ? 'rgba(59,130,246,0.3)' : 'rgba(34,197,94,0.3)'}`,
+                      }}>
+                        {concern.submissionType === 'assistance' ? '🆘 Assistance' : '💬 Feedback'}
+                      </span>
+                    </td>
+                  )}
+                  {activeTab === 'feedback' && (
+                    <td style={{ padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {[...Array(5)].map((_, i) => (
+                          <span key={i} style={{
+                            fontSize: '16px',
+                            color: i < (concern.rating || 0) ? '#FFD41C' : 'rgba(255,212,28,0.2)'
+                          }}>
+                            ⭐
+                          </span>
+                        ))}
+                        <span style={{ marginLeft: '8px', color: 'rgba(251,251,251,0.7)', fontSize: '12px' }}>
+                          ({concern.rating || 0}/5)
+                        </span>
+                      </div>
+                    </td>
+                  )}
+                  {activeTab !== 'feedback' && (
+                    <>
+                      <td style={{ padding: '16px' }}>
+                        {concern.submissionType === 'assistance' ? (
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            background: concern.priority === 'urgent' ? 'rgba(239,68,68,0.2)' :
+                                        concern.priority === 'high' ? 'rgba(251,146,60,0.2)' :
+                                        concern.priority === 'medium' ? 'rgba(251,191,36,0.2)' : 'rgba(34,197,94,0.2)',
+                            color: concern.priority === 'urgent' ? '#EF4444' :
+                                   concern.priority === 'high' ? '#FB923C' :
+                                   concern.priority === 'medium' ? '#FBBF24' : '#22C55E',
+                          }}>
+                            {concern.priority || 'low'}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'rgba(251,251,251,0.4)', fontSize: '11px' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        {concern.submissionType === 'assistance' ? (
+                          <select
+                            value={concern.status || 'pending'}
+                            onChange={(e) => handleStatusChange(concern, e.target.value)}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              border: '1px solid rgba(255,212,28,0.3)',
+                              background: 'rgba(255,255,255,0.05)',
+                              color: concern.status === 'resolved' ? '#22C55E' :
+                                     concern.status === 'in_progress' ? '#3B82F6' :
+                                     concern.status === 'closed' ? '#6B7280' : '#FBBF24',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="closed">Closed</option>
+                          </select>
+                        ) : (
+                          <span style={{ color: 'rgba(251,251,251,0.4)', fontSize: '11px' }}>—</span>
+                        )}
+                      </td>
+                    </>
+                  )}
+                  <td style={{ padding: '16px', color: 'rgba(251,251,251,0.9)' }}>
+                    {new Date(concern.submittedAt || concern.createdAt).toLocaleDateString()}
+                  </td>
+                  <td style={{ padding: '16px', textAlign: 'right' }}>
+                    <button
+                      onClick={() => setSelectedConcern(concern)}
+                      style={{
+                        padding: '6px 12px',
+                        background: 'rgba(59,130,246,0.2)',
+                        color: '#3B82F6',
+                        border: '1px solid rgba(59,130,246,0.3)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 600
+                      }}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '8px 16px',
+                  background: currentPage === 1 ? 'rgba(255,212,28,0.1)' : 'rgba(255,212,28,0.2)',
+                  border: '2px solid rgba(255,212,28,0.3)',
+                  borderRadius: '8px',
+                  color: currentPage === 1 ? 'rgba(251,251,251,0.3)' : '#FFD41C',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                ← Previous
+              </button>
+              <span style={{ color: 'rgba(251,251,251,0.7)', fontSize: '13px', fontWeight: 600 }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '8px 16px',
+                  background: currentPage === totalPages ? 'rgba(255,212,28,0.1)' : 'rgba(255,212,28,0.2)',
+                  border: '2px solid rgba(255,212,28,0.3)',
+                  borderRadius: '8px',
+                  color: currentPage === totalPages ? 'rgba(251,251,251,0.3)' : '#FFD41C',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      </div>
+
+      {/* Concern Detail Modal */}
+      {selectedConcern && (
+        <ConcernDetailModal
+          concern={selectedConcern}
+          onClose={() => setSelectedConcern(null)}
+        />
+      )}
+    </div>
+  );
+}
