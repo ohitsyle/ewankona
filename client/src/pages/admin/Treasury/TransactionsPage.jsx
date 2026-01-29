@@ -4,14 +4,16 @@ import { useTheme } from '../../../context/ThemeContext';
 import api from '../../../utils/api';
 import { toast } from 'react-toastify';
 import TransactionTable from '../../../components/TreasuryDashboard/TransactionTable';
+import { Search, FileSpreadsheet } from 'lucide-react';
 
 export default function TransactionsPage() {
-  const { theme } = useTheme();
+  const { theme, isDarkMode } = useTheme();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
-  const [filterDate, setFilterDate] = useState('today');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const intervalRef = useRef(null);
 
   const fetchTransactions = async (silent = false) => {
@@ -19,9 +21,11 @@ export default function TransactionsPage() {
       if (!silent) setLoading(true);
 
       const params = new URLSearchParams();
+      params.append('limit', '100');
       if (filterType !== 'all') params.append('type', filterType);
-      if (filterDate !== 'all') params.append('period', filterDate);
       if (searchQuery) params.append('search', searchQuery);
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
 
       const data = await api.get(`/admin/treasury/transactions?${params}`);
       if (data?.transactions) {
@@ -42,12 +46,48 @@ export default function TransactionsPage() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [filterType, filterDate, searchQuery]);
+  }, [filterType, searchQuery, startDate, endDate]);
 
   const handleExport = async () => {
     try {
       toast.info('Exporting transactions...');
-      // Export functionality
+
+      // Build export params
+      const params = new URLSearchParams();
+      if (filterType !== 'all') params.append('type', filterType);
+      if (searchQuery) params.append('search', searchQuery);
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+
+      // Create CSV content
+      const headers = ['Date', 'Time', 'ID Number', 'Name', 'Type', 'Amount', 'Transaction ID'];
+      const csvContent = [
+        headers.join(','),
+        ...transactions.map(tx => {
+          const date = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : tx.date || '';
+          const time = tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString() : tx.time || '';
+          return [
+            date,
+            time,
+            tx.idNumber || tx.schoolUId || '',
+            tx.userName || '',
+            tx.transactionType === 'credit' ? 'Cash-In' : 'Cash-Out',
+            tx.amount,
+            tx.transactionId || tx._id || ''
+          ].join(',');
+        })
+      ].join('\n');
+
+      // Download CSV
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Export completed!');
     } catch (error) {
       toast.error('Failed to export');
     }
@@ -58,8 +98,10 @@ export default function TransactionsPage() {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
-      tx.id?.toLowerCase().includes(query) ||
+      tx.transactionId?.toLowerCase().includes(query) ||
+      tx._id?.toLowerCase().includes(query) ||
       tx.idNumber?.toLowerCase().includes(query) ||
+      tx.schoolUId?.toLowerCase().includes(query) ||
       tx.userName?.toLowerCase().includes(query) ||
       tx.businessName?.toLowerCase().includes(query)
     );
@@ -68,7 +110,7 @@ export default function TransactionsPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div style={{ borderColor: theme.border.primary }} className="mb-[30px] border-b-2 pb-5">
+      <div style={{ borderColor: theme.border.primary }} className="mb-6 border-b-2 pb-5">
         <h2 style={{ color: theme.accent.primary }} className="text-2xl font-bold m-0 mb-2 flex items-center gap-[10px]">
           <span>📋</span> Transactions
         </h2>
@@ -77,74 +119,132 @@ export default function TransactionsPage() {
         </p>
       </div>
 
-      {/* Filters */}
-      <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="p-4 rounded-2xl border mb-5 flex flex-wrap gap-4 items-center">
-        {/* Search */}
-        <div className="flex-1 relative min-w-[200px]">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg">🔍</span>
+      {/* Search and Filters Bar - Matching Screenshot Style */}
+      <div
+        style={{
+          background: isDarkMode ? 'rgba(15,18,39,0.8)' : theme.bg.card,
+          borderColor: theme.accent.primary
+        }}
+        className="rounded-xl border-2 p-3 mb-5 flex items-center gap-4"
+      >
+        {/* Search Input */}
+        <div className="flex-1 relative">
+          <Search
+            style={{ color: theme.text.tertiary }}
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5"
+          />
           <input
             type="text"
-            placeholder="Search by ID, name, or transaction..."
+            placeholder="Search transactions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
-            className="w-full pl-10 pr-4 py-2 rounded-xl border text-sm focus:outline-none"
+            style={{
+              background: 'transparent',
+              color: theme.text.primary,
+              borderColor: 'transparent'
+            }}
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm focus:outline-none placeholder:text-gray-500"
           />
         </div>
 
-        {/* Type Filter */}
-        <div className="flex gap-2">
-          {[
-            { value: 'all', label: 'All' },
-            { value: 'credit', label: 'Cash-In' },
-            { value: 'debit', label: 'Cash-Out' }
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setFilterType(value)}
-              style={{
-                background: filterType === value ? theme.accent.primary : theme.bg.tertiary,
-                color: filterType === value ? theme.accent.secondary : theme.text.primary,
-                borderColor: theme.border.primary
-              }}
-              className="px-4 py-2 rounded-xl font-bold text-sm border hover:opacity-80 transition"
-            >
-              {label}
-            </button>
-          ))}
+        {/* Divider */}
+        <div style={{ background: theme.border.primary }} className="w-px h-8" />
+
+        {/* Type Filter Dropdown */}
+        <div className="flex flex-col">
+          <span style={{ color: theme.text.tertiary }} className="text-[10px] font-bold uppercase tracking-wider mb-1">
+            Type
+          </span>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            style={{
+              background: isDarkMode ? 'rgba(30,35,71,0.8)' : '#F9FAFB',
+              color: theme.text.primary,
+              borderColor: theme.border.primary
+            }}
+            className="px-3 py-2 rounded-lg border text-sm font-medium min-w-[120px] focus:outline-none cursor-pointer"
+          >
+            <option value="all">All</option>
+            <option value="credit">Cash-In</option>
+            <option value="debit">Cash-Out</option>
+          </select>
         </div>
 
-        {/* Date Filter */}
-        <div className="flex gap-2">
-          {[
-            { value: 'today', label: 'Today' },
-            { value: '7days', label: '7 Days' },
-            { value: '30days', label: '30 Days' },
-            { value: 'all', label: 'All Time' }
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setFilterDate(value)}
-              style={{
-                background: filterDate === value ? theme.accent.primary : theme.bg.tertiary,
-                color: filterDate === value ? theme.accent.secondary : theme.text.primary,
-                borderColor: theme.border.primary
-              }}
-              className="px-3 py-2 rounded-xl font-bold text-xs border hover:opacity-80 transition"
-            >
-              {label}
-            </button>
-          ))}
+        {/* Divider */}
+        <div style={{ background: theme.border.primary }} className="w-px h-8" />
+
+        {/* Date Range - From */}
+        <div className="flex flex-col">
+          <span style={{ color: theme.text.tertiary }} className="text-[10px] font-bold uppercase tracking-wider mb-1">
+            From
+          </span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{
+              background: isDarkMode ? 'rgba(30,35,71,0.8)' : '#F9FAFB',
+              color: theme.text.primary,
+              borderColor: theme.border.primary
+            }}
+            className="px-3 py-2 rounded-lg border text-sm focus:outline-none cursor-pointer"
+          />
         </div>
 
-        {/* Export */}
+        {/* Date Range - To */}
+        <div className="flex flex-col">
+          <span style={{ color: theme.text.tertiary }} className="text-[10px] font-bold uppercase tracking-wider mb-1">
+            To
+          </span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={{
+              background: isDarkMode ? 'rgba(30,35,71,0.8)' : '#F9FAFB',
+              color: theme.text.primary,
+              borderColor: theme.border.primary
+            }}
+            className="px-3 py-2 rounded-lg border text-sm focus:outline-none cursor-pointer"
+          />
+        </div>
+
+        {/* Divider */}
+        <div style={{ background: theme.border.primary }} className="w-px h-8" />
+
+        {/* Export Button */}
         <button
           onClick={handleExport}
-          style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
-          className="px-4 py-2 rounded-xl font-bold text-sm border hover:opacity-80 transition flex items-center gap-2"
+          style={{
+            background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+          }}
+          className="px-4 py-2.5 rounded-lg font-bold text-sm text-white hover:opacity-90 transition flex items-center gap-2 whitespace-nowrap"
         >
-          <span>📥</span> Export
+          <FileSpreadsheet className="w-4 h-4" />
+          Export CSV
         </button>
+      </div>
+
+      {/* Results Count */}
+      <div className="mb-4 flex items-center justify-between">
+        <p style={{ color: theme.text.secondary }} className="text-sm">
+          Showing <span style={{ color: theme.accent.primary }} className="font-bold">{filteredTransactions.length}</span> transactions
+        </p>
+        {(searchQuery || filterType !== 'all' || startDate || endDate) && (
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setFilterType('all');
+              setStartDate('');
+              setEndDate('');
+            }}
+            style={{ color: theme.accent.primary }}
+            className="text-sm font-semibold hover:underline"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Transactions Table */}

@@ -14,92 +14,114 @@ export default function TransactionTable({
   const { theme, isDarkMode } = useTheme();
   const baseColor = isDarkMode ? '255, 212, 28' : '59, 130, 246';
 
-  // ✅ FIXED: Check for both merchantId and MER-prefixed idNumber
+  // Format date from createdAt
+  const formatDate = (tx) => {
+    if (tx.date) return tx.date;
+    if (tx.createdAt) {
+      const date = new Date(tx.createdAt);
+      return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    }
+    return 'N/A';
+  };
+
+  // Format time from createdAt
+  const formatTime = (tx) => {
+    if (tx.time) return tx.time;
+    if (tx.createdAt) {
+      const date = new Date(tx.createdAt);
+      return date.toLocaleTimeString('en-PH', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+    return 'N/A';
+  };
+
+  // Get transaction ID
+  const getTransactionId = (tx) => {
+    return tx.transactionId || tx.id || tx._id || 'N/A';
+  };
+
+  // Check for both merchantId and MER-prefixed idNumber
   const isCashOut = (tx) => {
-    // A cash-out is a DEBIT transaction that has a merchantId
-    // Check both merchantId (from transactions page) and idNumber starting with 'MER' (from dashboard)
     const hasMerchantId = Boolean(tx.merchantId) || (tx.idNumber && tx.idNumber.startsWith('MER'));
     const result = tx.transactionType === 'debit' && hasMerchantId;
-    
     return result;
   };
 
-  // ✅ Determine if transaction is a user cash-in
+  // Determine if transaction is a user cash-in
   const isCashIn = (tx) => {
-    // A cash-in is a CREDIT transaction without a merchantId
     return tx.transactionType === 'credit' && !tx.merchantId;
   };
 
-  // ✅ Get ID/Merchant to display
+  // Get ID/Merchant to display
   const getIdentifier = (tx) => {
     if (isCashOut(tx)) return tx.merchantId || tx.idNumber;
-    return tx.idNumber || 'N/A';
+    return tx.idNumber || tx.schoolUId || 'N/A';
   };
 
-  // ✅ FIXED: Check userName for business name (used by dashboard)
+  // Get details
   const getDetails = (tx) => {
     if (isCashOut(tx)) {
-      // For cash-outs, show "Cash-Out: [Business Name]"
-      const merchantInfo = tx.businessName || 
-                          tx.userName || // Dashboard uses userName for business name
+      const merchantInfo = tx.businessName ||
+                          tx.userName ||
                           tx.displayIdNumber ||
-                          tx.merchantId || 
-                          tx.idNumber || // Fallback to idNumber
+                          tx.merchantId ||
+                          tx.idNumber ||
                           'Merchant';
       return `Cash-Out: ${merchantInfo}`;
     }
-    
+
     if (isCashIn(tx)) {
-      // For cash-ins, show "Cash-In: [Student Name]"
       const userName = tx.userName || 'User';
       return `Cash-In: ${userName}`;
     }
-    
-    // Fallback for other transaction types
+
     return tx.description || tx.userName || 'Transaction';
   };
 
-  // ✅ Get amount color (treasury perspective)
+  // Get amount color (treasury perspective)
   const getAmountColor = (tx) => {
-    // If colors are disabled, return white for all
     if (!showColors) {
       return 'text-white/90';
     }
-    
-    // Cash-out: Treasury GIVES money to merchant (negative/red)
+
     if (isCashOut(tx)) {
       return 'text-red-400';
     }
-    
-    // Cash-in: Treasury RECEIVES money (positive/green)
+
     if (isCashIn(tx)) {
       return 'text-green-400';
     }
-    
+
     return 'text-white/90';
   };
 
-  // ✅ Format amount with sign (from treasury's perspective)
+  // Format amount with sign (from treasury's perspective)
   const formatAmount = (tx) => {
     const amount = Number(tx.amount).toFixed(2);
-    
-    // If colors are disabled, no signs
+
     if (!showColors) {
       if (isCashOut(tx)) {
         return `- ₱${amount}`;
       }
       return `₱${amount}`;
     }
-    
-    // With colors enabled, show signs
+
     if (isCashOut(tx)) {
       return `- ₱${amount}`;
     }
-    
+
     if (isCashIn(tx)) {
       return `+ ₱${amount}`;
     }
-    
+
     return `₱${amount}`;
   };
 
@@ -202,7 +224,7 @@ export default function TransactionTable({
 
                 return (
                   <tr
-                    key={tx.id || tx._id || idx}
+                    key={tx._id || tx.id || tx.transactionId || idx}
                     onClick={() => onRowClick?.(tx)}
                     style={{
                       borderBottom: `1px solid ${theme.border.primary}`,
@@ -217,10 +239,10 @@ export default function TransactionTable({
                     }}
                   >
                     <td style={{ padding: '12px 16px', textAlign: 'center', color: theme.text.primary }}>
-                      {tx.date}
+                      {formatDate(tx)}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center', color: theme.text.primary }}>
-                      {tx.time}
+                      {formatTime(tx)}
                     </td>
 
                     {/* ID/Merchant */}
@@ -240,7 +262,7 @@ export default function TransactionTable({
 
                     {/* Transaction ID */}
                     <td style={{ padding: '12px 16px', textAlign: 'center', fontFamily: 'monospace', fontSize: '11px', color: theme.text.secondary }}>
-                      {tx.id}
+                      {getTransactionId(tx)}
                     </td>
                   </tr>
                 );

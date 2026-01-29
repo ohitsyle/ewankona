@@ -193,41 +193,7 @@ export default function TreasuryDashboard() {
             </div>
           </button>
 
-          {/* Quick Stats Summary */}
-          <div
-            style={{
-              background: theme.bg.card,
-              borderColor: theme.border.primary
-            }}
-            className="rounded-2xl border p-5 mt-2"
-          >
-            <h4 style={{ color: theme.accent.primary }} className="text-sm font-bold mb-4">
-              📊 Quick Summary
-            </h4>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span style={{ color: theme.text.secondary }} className="text-sm">Total Users</span>
-                <span style={{ color: theme.text.primary }} className="font-bold">{stats.totalUsers}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span style={{ color: theme.text.secondary }} className="text-sm">Active Users</span>
-                <span className="font-bold text-emerald-500">{stats.activeUsers}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span style={{ color: theme.text.secondary }} className="text-sm">Merchants</span>
-                <span style={{ color: theme.text.primary }} className="font-bold">{stats.totalMerchants}</span>
-              </div>
-              <div style={{ borderColor: theme.border.primary }} className="border-t pt-3 mt-3">
-                <div className="flex justify-between items-center">
-                  <span style={{ color: theme.text.secondary }} className="text-sm">Net Today</span>
-                  <span className={`font-bold ${(stats.todayCashIn - stats.todayCashOut) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                    {(stats.todayCashIn - stats.todayCashOut) >= 0 ? '+' : ''}₱{(stats.todayCashIn - stats.todayCashOut).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
-        </div>
 
         {/* Right Column - Recent Transactions */}
         <div className="overflow-hidden flex flex-col">

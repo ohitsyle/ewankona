@@ -54,11 +54,6 @@ export default function MerchantsPage() {
     );
   });
 
-  // Stats
-  const totalMerchants = filteredMerchants.length;
-  const activeMerchants = filteredMerchants.filter(m => m.isActive).length;
-  const totalBalance = filteredMerchants.reduce((sum, m) => sum + (m.balance || 0), 0);
-
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -69,13 +64,6 @@ export default function MerchantsPage() {
         <p style={{ color: theme.text.secondary }} className="text-[13px] m-0">
           View merchant accounts and balances (read-only)
         </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-5 mb-5">
-        <StatCard icon="🏪" label="TOTAL MERCHANTS" value={totalMerchants} subtitle="registered" color="#3B82F6" theme={theme} />
-        <StatCard icon="✅" label="ACTIVE" value={activeMerchants} subtitle="merchants" color="#10B981" theme={theme} />
-        <StatCard icon="💰" label="TOTAL BALANCE" value={`₱${totalBalance.toLocaleString()}`} subtitle="in merchant accounts" color="#A855F7" theme={theme} />
       </div>
 
       {/* Filters */}
@@ -148,18 +136,6 @@ export default function MerchantsPage() {
           onClose={() => setSelectedMerchant(null)}
         />
       )}
-    </div>
-  );
-}
-
-// Stat Card
-function StatCard({ icon, label, value, subtitle, color, theme }) {
-  return (
-    <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="p-6 rounded-2xl border relative overflow-hidden">
-      <div className="absolute right-4 top-4 text-[40px] opacity-15">{icon}</div>
-      <div style={{ color: theme.text.secondary }} className="text-[11px] font-bold uppercase tracking-wide mb-3">{label}</div>
-      <div style={{ color: theme.text.primary }} className="text-[32px] font-extrabold mb-2">{value}</div>
-      <div className="text-xs font-semibold inline-block py-[3px] px-[10px] rounded-xl" style={{ color, background: `${color}20` }}>{subtitle}</div>
     </div>
   );
 }
