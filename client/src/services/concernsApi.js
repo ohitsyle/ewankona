@@ -31,7 +31,12 @@ export const getConcerns = async (params = {}) => {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to fetch concerns');
+      throw new Error(data.message || data.error || 'Failed to fetch concerns');
+    }
+
+    // Handle both old format (array) and new format ({ success, concerns })
+    if (Array.isArray(data)) {
+      return { success: true, concerns: data };
     }
 
     return data;

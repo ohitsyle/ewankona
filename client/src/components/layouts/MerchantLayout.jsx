@@ -19,7 +19,7 @@ export default function MerchantLayout({ children }) {
   };
 
   const handleOpenProfile = () => {
-    navigate('/admin/profile');
+    navigate('/admin/merchant/profile');
   };
 
   // Merchant tabs

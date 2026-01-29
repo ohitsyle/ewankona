@@ -1,5 +1,5 @@
 // src/pages/admin/Motorpool/Concerns.jsx
-// Motorpool-specific concerns - shows only concerns reported to Motorpool Office
+// Motorpool-specific concerns - shows only concerns reported to NU Shuttle Service
 import React, { useState, useEffect } from 'react';
 import { getConcerns, getConcernDetails, updateConcernStatus } from '../../../services/concernsApi';
 import SearchBar from '../../../components/shared/SearchBar';
@@ -36,9 +36,9 @@ export default function MotorpoolConcerns() {
         limit: PAGINATION_CONFIG.MAX_ITEMS_CLIENT_SIDE
       });
       if (res.success) {
-        // Filter to only show concerns for Motorpool Office
+        // Filter to only show concerns for NU Shuttle Service (Motorpool)
         const motorpoolConcerns = (res.concerns || []).filter(concern =>
-          concern.reportTo === 'Motorpool Office'
+          concern.reportTo === 'NU Shuttle Service'
         );
         setConcerns(motorpoolConcerns);
       }

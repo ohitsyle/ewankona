@@ -23,7 +23,7 @@ export default function AccountingLayout({ children }) {
   };
 
   const handleOpenProfile = () => {
-    navigate('/admin/profile');
+    navigate('/admin/accounting/profile');
   };
 
   // Accounting tabs (read-only - no cash-in, no registration)

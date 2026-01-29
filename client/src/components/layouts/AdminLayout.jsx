@@ -19,7 +19,7 @@ export default function AdminLayout({ children }) {
   };
 
   const handleOpenProfile = () => {
-    navigate('/admin/profile');
+    navigate('/admin/motorpool/profile');
   };
 
   // Motorpool tabs

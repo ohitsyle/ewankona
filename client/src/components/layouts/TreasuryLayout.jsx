@@ -22,7 +22,7 @@ export default function TreasuryLayout({ children }) {
   };
 
   const handleOpenProfile = () => {
-    navigate('/admin/profile');
+    navigate('/admin/treasury/profile');
   };
 
   // Treasury tabs (Cash In and Register accessible from Home dashboard cards only)

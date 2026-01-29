@@ -50,7 +50,7 @@ export default function LogsList() {
   const filteredLogs = logs.filter(log => {
     // Filter by admin role
     if (adminData?.role === 'motorpool') {
-      // Motorpool admins only see logs related to drivers, shuttles, routes, trips
+      // Motorpool admins see all logs related to drivers, shuttles, routes, trips, concerns, and motorpool operations
       const isMotorpoolRelated =
         log.driverId ||
         log.shuttleId ||
@@ -59,7 +59,47 @@ export default function LogsList() {
         log.eventType === 'route_start' ||
         log.eventType === 'route_end' ||
         log.eventType === 'driver_assignment' ||
-        log.eventType === 'shuttle_assignment';
+        log.eventType === 'shuttle_assignment' ||
+        log.eventType === 'trip_start' ||
+        log.eventType === 'trip_end' ||
+        log.eventType === 'trip_created' ||
+        log.eventType === 'trip_completed' ||
+        log.eventType === 'trip_cancelled' ||
+        log.eventType === 'driver_created' ||
+        log.eventType === 'driver_updated' ||
+        log.eventType === 'driver_deleted' ||
+        log.eventType === 'shuttle_created' ||
+        log.eventType === 'shuttle_updated' ||
+        log.eventType === 'shuttle_deleted' ||
+        log.eventType === 'route_created' ||
+        log.eventType === 'route_updated' ||
+        log.eventType === 'route_deleted' ||
+        log.eventType === 'phone_assigned' ||
+        log.eventType === 'phone_unassigned' ||
+        log.eventType === 'concern_resolved' ||
+        log.eventType === 'concern_updated' ||
+        log.eventType === 'payment' ||
+        log.eventType === 'passenger_boarding' ||
+        log.eventType === 'passenger_alighting' ||
+        log.eventType === 'gps_update' ||
+        log.eventType === 'admin_action' ||
+        log.title?.toLowerCase().includes('driver') ||
+        log.title?.toLowerCase().includes('shuttle') ||
+        log.title?.toLowerCase().includes('route') ||
+        log.title?.toLowerCase().includes('trip') ||
+        log.title?.toLowerCase().includes('motorpool') ||
+        log.title?.toLowerCase().includes('concern') ||
+        log.description?.toLowerCase().includes('driver') ||
+        log.description?.toLowerCase().includes('shuttle') ||
+        log.description?.toLowerCase().includes('route') ||
+        log.description?.toLowerCase().includes('trip') ||
+        log.description?.toLowerCase().includes('motorpool') ||
+        log.targetEntity === 'driver' ||
+        log.targetEntity === 'shuttle' ||
+        log.targetEntity === 'route' ||
+        log.targetEntity === 'trip' ||
+        log.targetEntity === 'concern' ||
+        log.targetEntity === 'phone';
       if (!isMotorpoolRelated) return false;
     } else if (adminData?.role === 'merchant') {
       // Merchant admins only see logs related to merchants, payments, transactions

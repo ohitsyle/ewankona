@@ -64,8 +64,6 @@ import Config from './pages/admin/Shared/Config';
 // User Pages
 import UserDashboard from './pages/user/UserDashboard';
 import TransactionHistory from './pages/user/TransactionHistory';
-import Settings from './pages/user/Settings';
-import FAQ from './pages/user/FAQ';
 
 // Protected Route wrapper for Motorpool Admin
 const MotorpoolProtectedRoute = ({ children }) => {
@@ -151,22 +149,6 @@ function App() {
                 </UserProtectedRoute>
               }
             />
-            <Route
-              path="/user/settings"
-              element={
-                <UserProtectedRoute>
-                  <Settings />
-                </UserProtectedRoute>
-              }
-            />
-            <Route
-              path="/faq"
-              element={
-                <UserProtectedRoute>
-                  <FAQ />
-                </UserProtectedRoute>
-              }
-            />
             {/* Legacy route redirect */}
             <Route path="/users-dashboard" element={<Navigate to="/user/dashboard" replace />} />
 
@@ -235,6 +217,15 @@ function App() {
                 </TreasuryProtectedRoute>
               }
             />
+            {/* Treasury Profile */}
+            <Route
+              path="/admin/treasury/profile"
+              element={
+                <TreasuryProtectedRoute>
+                  <ProfilePage />
+                </TreasuryProtectedRoute>
+              }
+            />
             {/* Treasury default redirect */}
             <Route path="/admin/treasury" element={<Navigate to="/admin/treasury/dashboard" replace />} />
 
@@ -284,6 +275,15 @@ function App() {
               element={
                 <AccountingProtectedRoute>
                   <Config />
+                </AccountingProtectedRoute>
+              }
+            />
+            {/* Accounting Profile */}
+            <Route
+              path="/admin/accounting/profile"
+              element={
+                <AccountingProtectedRoute>
+                  <ProfilePage />
                 </AccountingProtectedRoute>
               }
             />
@@ -355,6 +355,15 @@ function App() {
                 </MotorpoolProtectedRoute>
               }
             />
+            {/* Motorpool Profile */}
+            <Route
+              path="/admin/motorpool/profile"
+              element={
+                <MotorpoolProtectedRoute>
+                  <ProfilePage />
+                </MotorpoolProtectedRoute>
+              }
+            />
 
             {/* ================= MERCHANT ADMIN ROUTES ================= */}
             <Route
@@ -394,6 +403,15 @@ function App() {
               element={
                 <MerchantProtectedRoute>
                   <MerchantConfigurationsPage />
+                </MerchantProtectedRoute>
+              }
+            />
+            {/* Merchant Profile */}
+            <Route
+              path="/admin/merchant/profile"
+              element={
+                <MerchantProtectedRoute>
+                  <ProfilePage />
                 </MerchantProtectedRoute>
               }
             />

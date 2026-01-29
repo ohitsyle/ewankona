@@ -1,335 +1,173 @@
-// client/src/pages/admin/Treasury/TransactionsPage.jsx
-// Transaction History Page - Now uses TreasuryLayout for consistent design
-
-import React, { useState, useEffect } from 'react';
+// src/pages/admin/Treasury/TransactionsPage.jsx
+import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
-import { getTreasuryTransactions, exportTransactions } from '../../../services/treasuryApi';
+import api from '../../../utils/api';
 import { toast } from 'react-toastify';
-import SearchBar from '../../../components/shared/SearchBar';
-import ExportButton from '../../../components/shared/ExportButton';
+import TransactionTable from '../../../components/TreasuryDashboard/TransactionTable';
 
 export default function TransactionsPage() {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const [filterType, setFilterType] = useState('all');
+  const [filterDate, setFilterDate] = useState('today');
+  const intervalRef = useRef(null);
 
-  const loadTransactions = async () => {
+  const fetchTransactions = async (silent = false) => {
     try {
-      const response = await getTreasuryTransactions({
-        startDate,
-        endDate,
-        transactionType: typeFilter,
-        search: searchQuery
-      });
+      if (!silent) setLoading(true);
 
-      if (response.success) {
-        setTransactions(response.transactions || []);
+      const params = new URLSearchParams();
+      if (filterType !== 'all') params.append('type', filterType);
+      if (filterDate !== 'all') params.append('period', filterDate);
+      if (searchQuery) params.append('search', searchQuery);
+
+      const data = await api.get(`/admin/treasury/transactions?${params}`);
+      if (data?.transactions) {
+        setTransactions(data.transactions);
       }
-      setLoading(false);
     } catch (error) {
-      console.error('Error loading transactions:', error);
-      toast.error('Failed to load transactions');
-      setLoading(false);
+      if (!silent) toast.error('Failed to load transactions');
+    } finally {
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTransactions();
-    const interval = setInterval(loadTransactions, 30000);
-    return () => clearInterval(interval);
-  }, [searchQuery, typeFilter, startDate, endDate]);
+    fetchTransactions();
+
+    intervalRef.current = setInterval(() => fetchTransactions(true), 10000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [filterType, filterDate, searchQuery]);
 
   const handleExport = async () => {
     try {
-      const blob = await exportTransactions({
-        startDate,
-        endDate,
-        transactionType: typeFilter
-      });
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `transactions-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast.success('Transactions exported successfully');
+      toast.info('Exporting transactions...');
+      // Export functionality
     } catch (error) {
-      console.error('Export error:', error);
-      toast.error('Failed to export transactions');
+      toast.error('Failed to export');
     }
   };
 
+  // Filter transactions locally for search
   const filteredTransactions = transactions.filter(tx => {
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = (
-        tx.transactionId?.toLowerCase().includes(searchLower) ||
-        tx.idNumber?.toLowerCase().includes(searchLower) ||
-        tx.userName?.toLowerCase().includes(searchLower) ||
-        tx.email?.toLowerCase().includes(searchLower)
-      );
-      if (!matchesSearch) return false;
-    }
-    return true;
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentItems = filteredTransactions.slice(startIndex, endIndex);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, typeFilter, startDate, endDate]);
-
-  const getTypeColor = (type) => {
-    return type === 'credit'
-      ? { bg: 'rgba(34,197,94,0.2)', color: '#22C55E' }
-      : { bg: 'rgba(239,68,68,0.2)', color: '#EF4444' };
-  };
-
-  const baseColor = isDarkMode ? '255, 212, 28' : '59, 130, 246';
-
-  if (loading) {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
     return (
-      <div className="text-center py-[60px]" style={{ color: theme.accent.primary }}>
-        Loading transactions...
-      </div>
+      tx.id?.toLowerCase().includes(query) ||
+      tx.idNumber?.toLowerCase().includes(query) ||
+      tx.userName?.toLowerCase().includes(query) ||
+      tx.businessName?.toLowerCase().includes(query)
     );
-  }
+  });
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="mb-[30px] pb-5" style={{ borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)'}` }}>
-        <div style={{ marginBottom: '20px' }}>
-          <h2 className="text-2xl font-bold m-0 mb-2 flex items-center gap-[10px]" style={{ color: theme.accent.primary }}>
-            <span>📋</span> Transaction History
-          </h2>
-          <p className="text-[13px] m-0" style={{ color: theme.text.secondary }}>
-            {filteredTransactions.length > 0
-              ? `Showing ${startIndex + 1}-${Math.min(endIndex, filteredTransactions.length)} of ${filteredTransactions.length} • Page ${currentPage} of ${totalPages}`
-              : `Track all cash transactions • Total: ${transactions.length}`
-            }
-          </p>
-        </div>
+      <div style={{ borderColor: theme.border.primary }} className="mb-[30px] border-b-2 pb-5">
+        <h2 style={{ color: theme.accent.primary }} className="text-2xl font-bold m-0 mb-2 flex items-center gap-[10px]">
+          <span>📋</span> Transactions
+        </h2>
+        <p style={{ color: theme.text.secondary }} className="text-[13px] m-0">
+          View and search all NUCash transactions • Auto-refreshes every 10s
+        </p>
+      </div>
 
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          {/* Search Bar */}
-          <SearchBar
+      {/* Filters */}
+      <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="p-4 rounded-2xl border mb-5 flex flex-wrap gap-4 items-center">
+        {/* Search */}
+        <div className="flex-1 relative min-w-[200px]">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg">🔍</span>
+          <input
+            type="text"
+            placeholder="Search by ID, name, or transaction..."
             value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search by ID, user, or email..."
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
+            className="w-full pl-10 pr-4 py-2 rounded-xl border text-sm focus:outline-none"
           />
-
-          {/* Type Filter */}
-          <div style={{ minWidth: '150px' }}>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`,
-                borderRadius: '8px',
-                background: 'rgba(251,251,251,0.05)',
-                color: theme.text.primary,
-                fontSize: '14px',
-                boxSizing: 'border-box',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="">All Types</option>
-              <option value="credit">Cash In</option>
-              <option value="debit">Cash Out</option>
-            </select>
-          </div>
-
-          {/* Date Range */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              style={{
-                padding: '12px 16px',
-                border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`,
-                borderRadius: '8px',
-                background: 'rgba(251,251,251,0.05)',
-                color: theme.text.primary,
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}
-            />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              style={{
-                padding: '12px 16px',
-                border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`,
-                borderRadius: '8px',
-                background: 'rgba(251,251,251,0.05)',
-                color: theme.text.primary,
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}
-            />
-          </div>
-
-          {/* Export Button */}
-          <ExportButton onClick={handleExport} disabled={filteredTransactions.length === 0} />
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-y-auto pr-2">
-        {transactions.length === 0 ? (
-          <div className="text-center py-[60px] text-[rgba(251,251,251,0.5)]">
-            <div className="text-5xl mb-4">📋</div>
-            <div>No transactions found</div>
-          </div>
-        ) : filteredTransactions.length === 0 ? (
-          <div className="text-center py-[60px] text-[rgba(251,251,251,0.5)]">
-            <div className="text-5xl mb-4">🔍</div>
-            <div style={{ marginBottom: '12px' }}>No transactions match your search</div>
+        {/* Type Filter */}
+        <div className="flex gap-2">
+          {[
+            { value: 'all', label: 'All' },
+            { value: 'credit', label: 'Cash-In' },
+            { value: 'debit', label: 'Cash-Out' }
+          ].map(({ value, label }) => (
             <button
-              onClick={() => setSearchQuery('')}
+              key={value}
+              onClick={() => setFilterType(value)}
               style={{
-                padding: '8px 16px',
-                background: isDarkMode ? 'rgba(255,212,28,0.15)' : 'rgba(59,130,246,0.15)',
-                border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`,
-                borderRadius: '8px',
-                color: theme.accent.primary,
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer'
+                background: filterType === value ? theme.accent.primary : theme.bg.tertiary,
+                color: filterType === value ? theme.accent.secondary : theme.text.primary,
+                borderColor: theme.border.primary
               }}
+              className="px-4 py-2 rounded-xl font-bold text-sm border hover:opacity-80 transition"
             >
-              Clear Search
+              {label}
             </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)'}` }}>
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr style={{ background: isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)' }}>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>Transaction ID</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>Date & Time</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>User</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>ID Number</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>Type</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>Amount</th>
-                  <th className="text-left p-4 text-[11px] font-extrabold uppercase" style={{ color: theme.accent.primary, borderBottom: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}` }}>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentItems.map((tx) => {
-                  const typeStyle = getTypeColor(tx.transactionType);
-                  const date = new Date(tx.createdAt);
+          ))}
+        </div>
 
-                  return (
-                    <tr key={tx._id} style={{ borderBottom: `1px solid ${theme.border.primary}` }}>
-                      <td style={{ padding: '16px', color: theme.text.primary, fontFamily: 'monospace', fontSize: '11px', fontWeight: 700 }}>
-                        {tx.transactionId || tx._id.slice(-8)}
-                      </td>
-                      <td style={{ padding: '16px', color: theme.text.primary }}>
-                        {date.toLocaleDateString('en-GB')} {date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td style={{ padding: '16px', color: theme.text.primary, fontWeight: 600 }}>
-                        {tx.userName || 'N/A'}
-                      </td>
-                      <td style={{ padding: '16px', color: theme.text.primary, fontFamily: 'monospace', fontSize: '11px' }}>
-                        {tx.idNumber}
-                      </td>
-                      <td style={{ padding: '16px' }}>
-                        <span style={{
-                          padding: '4px 12px',
-                          background: typeStyle.bg,
-                          color: typeStyle.color,
-                          borderRadius: '12px',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          textTransform: 'uppercase'
-                        }}>
-                          {tx.transactionType === 'credit' ? 'Cash In' : 'Cash Out'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '16px', color: tx.transactionType === 'credit' ? '#22C55E' : '#EF4444', fontWeight: 700 }}>
-                        {tx.transactionType === 'credit' ? '+' : '-'}₱{Number(tx.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ padding: '16px', color: theme.text.primary, fontWeight: 600 }}>
-                        ₱{Number(tx.balance).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* Date Filter */}
+        <div className="flex gap-2">
+          {[
+            { value: 'today', label: 'Today' },
+            { value: '7days', label: '7 Days' },
+            { value: '30days', label: '30 Days' },
+            { value: 'all', label: 'All Time' }
+          ].map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => setFilterDate(value)}
+              style={{
+                background: filterDate === value ? theme.accent.primary : theme.bg.tertiary,
+                color: filterDate === value ? theme.accent.secondary : theme.text.primary,
+                borderColor: theme.border.primary
+              }}
+              className="px-3 py-2 rounded-xl font-bold text-xs border hover:opacity-80 transition"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Export */}
+        <button
+          onClick={handleExport}
+          style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
+          className="px-4 py-2 rounded-xl font-bold text-sm border hover:opacity-80 transition flex items-center gap-2"
+        >
+          <span>📥</span> Export
+        </button>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{
-          marginTop: '20px',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <button
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-            disabled={currentPage === 1}
-            style={{
-              padding: '8px 16px',
-              background: currentPage === 1 ? 'rgba(100,100,100,0.2)' : `rgba(${baseColor}, 0.15)`,
-              border: `2px solid ${currentPage === 1 ? 'rgba(100,100,100,0.3)' : `rgba(${baseColor}, 0.3)`}`,
-              borderRadius: '8px',
-              color: currentPage === 1 ? 'rgba(251,251,251,0.3)' : theme.accent.primary,
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              fontSize: '14px'
-            }}
-          >
-            ← Previous
-          </button>
-
-          <span style={{ color: theme.text.primary, fontSize: '14px', fontWeight: 600 }}>
-            Page {currentPage} of {totalPages}
-          </span>
-
-          <button
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: '8px 16px',
-              background: currentPage === totalPages ? 'rgba(100,100,100,0.2)' : `rgba(${baseColor}, 0.15)`,
-              border: `2px solid ${currentPage === totalPages ? 'rgba(100,100,100,0.3)' : `rgba(${baseColor}, 0.3)`}`,
-              borderRadius: '8px',
-              color: currentPage === totalPages ? 'rgba(251,251,251,0.3)' : theme.accent.primary,
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              fontSize: '14px'
-            }}
-          >
-            Next →
-          </button>
+      {/* Transactions Table */}
+      <div className="flex-1 overflow-y-auto">
+        <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl border overflow-hidden">
+          {loading ? (
+            <div style={{ color: theme.accent.primary }} className="text-center py-20">
+              <div className="animate-spin w-8 h-8 border-4 border-t-transparent rounded-full mx-auto mb-4" style={{ borderColor: `${theme.accent.primary} transparent transparent transparent` }} />
+              Loading transactions...
+            </div>
+          ) : filteredTransactions.length === 0 ? (
+            <div style={{ color: theme.text.tertiary }} className="text-center py-20">
+              <div className="text-5xl mb-4">📋</div>
+              <p>No transactions found</p>
+            </div>
+          ) : (
+            <TransactionTable
+              transactions={filteredTransactions}
+              showHeader={false}
+            />
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -10,6 +10,89 @@ import { logAdminAction } from '../utils/logger.js';
 import { sendTemporaryPIN } from '../services/emailService.js';
 
 // ============================================================
+// DASHBOARD ENDPOINT
+// ============================================================
+
+/**
+ * GET /api/admin/treasury/dashboard
+ * Get dashboard statistics for treasury admin
+ */
+router.get('/dashboard', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Today's cash-in transactions (credits)
+    const todayCashIns = await Transaction.aggregate([
+      {
+        $match: {
+          transactionType: 'credit',
+          createdAt: { $gte: today },
+          status: { $nin: ['Failed', 'Refunded'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Today's payments/withdrawals (debits)
+    const todayCashOuts = await Transaction.aggregate([
+      {
+        $match: {
+          transactionType: 'debit',
+          createdAt: { $gte: today },
+          status: { $nin: ['Failed', 'Refunded'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Today's total transactions
+    const todayTransactions = await Transaction.countDocuments({
+      createdAt: { $gte: today }
+    });
+
+    // Total users
+    const totalUsers = await User.countDocuments();
+
+    // Active users
+    const activeUsers = await User.countDocuments({ isActive: true });
+
+    // Total merchants
+    const totalMerchants = await Merchant.countDocuments();
+
+    const cashInData = todayCashIns.length > 0 ? todayCashIns[0] : { total: 0, count: 0 };
+    const cashOutData = todayCashOuts.length > 0 ? todayCashOuts[0] : { total: 0, count: 0 };
+
+    res.json({
+      todayCashIn: cashInData.total,
+      todayCashOut: cashOutData.total,
+      todayTransactions: todayTransactions,
+      totalUsers: totalUsers,
+      activeUsers: activeUsers,
+      totalMerchants: totalMerchants
+    });
+  } catch (error) {
+    console.error('❌ Treasury dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// ============================================================
 // ANALYTICS ENDPOINTS
 // ============================================================
 

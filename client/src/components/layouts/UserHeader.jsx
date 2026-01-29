@@ -35,30 +35,15 @@ export default function UserHeader({ userData, onLogout, onOpenSettings }) {
   };
 
   return (
-    <header style={{
+    <header className="sticky top-0 z-[1000] flex justify-between items-center px-3 py-3 sm:px-4 sm:py-4 md:px-10 md:py-5" style={{
       background: isDarkMode ? 'linear-gradient(135deg, #181D40 0%, #0f1227 100%)' : 'linear-gradient(135deg, #FFFFFF 0%, #FFFFFF 100%)',
-      padding: '20px 40px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
       borderBottom: `2px solid ${theme.accent.primary}`,
-      boxShadow: isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(59, 130, 246, 0.08)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 1000
+      boxShadow: isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(59, 130, 246, 0.08)'
     }}>
       {/* Left Side - Logo & Title */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-        <div style={{
-          width: '45px',
-          height: '45px',
+      <div className="flex items-center gap-2 sm:gap-3 md:gap-5">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 md:w-[45px] md:h-[45px] rounded-lg flex items-center justify-center font-extrabold text-base sm:text-lg md:text-[22px]" style={{
           background: theme.accent.primary,
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 800,
-          fontSize: '22px',
           color: isDarkMode ? '#181D40' : '#FFFFFF',
           boxShadow: `0 0 0 3px ${isDarkMode ? 'rgba(255, 212, 28, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
         }}>
@@ -66,34 +51,28 @@ export default function UserHeader({ userData, onLogout, onOpenSettings }) {
         </div>
 
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: theme.text.primary, letterSpacing: '0.5px', margin: 0 }}>
+          <h1 className="text-base sm:text-lg md:text-2xl font-bold m-0" style={{ color: theme.text.primary, letterSpacing: '0.5px' }}>
             NUCash
           </h1>
-          <p style={{ fontSize: '12px', color: theme.accent.primary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px', margin: '2px 0 0 0' }}>
+          <p className="text-[10px] sm:text-xs font-semibold uppercase m-0 mt-0.5 hidden sm:block" style={{ color: theme.accent.primary, letterSpacing: '1px' }}>
             Student Portal
           </p>
         </div>
       </div>
 
       {/* Right Side - Theme Toggle & Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div className="flex items-center gap-2 sm:gap-3 md:gap-5">
         {/* Theme Toggle */}
         <ThemeToggle />
 
         {/* Profile Dropdown */}
-        <div style={{ position: 'relative' }} ref={dropdownRef}>
+        <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center gap-1 sm:gap-2 rounded-full p-1 pr-2 sm:pr-3 cursor-pointer transition-all duration-200"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
               background: isDarkMode ? 'rgba(255, 212, 28, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-              border: `2px solid ${theme.accent.primary}`,
-              borderRadius: '25px',
-              padding: '4px 12px 4px 4px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              border: `2px solid ${theme.accent.primary}`
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = isDarkMode ? 'rgba(255, 212, 28, 0.2)' : 'rgba(59, 130, 246, 0.2)';
@@ -104,36 +83,21 @@ export default function UserHeader({ userData, onLogout, onOpenSettings }) {
               e.currentTarget.style.transform = 'scale(1)';
             }}
           >
-            <div style={{
-              width: '32px',
-              height: '32px',
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-extrabold text-xs sm:text-sm flex-shrink-0" style={{
               background: theme.accent.primary,
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '14px',
-              color: isDarkMode ? '#181D40' : '#FFFFFF',
-              flexShrink: 0
+              color: isDarkMode ? '#181D40' : '#FFFFFF'
             }}>
               {getInitials()}
             </div>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: showDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+            <svg className="w-3 h-3 hidden sm:block" viewBox="0 0 12 12" fill="none" style={{ transform: showDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
               <path d="M2 4L6 8L10 4" stroke={theme.accent.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
           {/* Dropdown Menu */}
           {showDropdown && (
-            <div style={{
-              position: 'absolute',
-              top: '52px',
-              right: 0,
+            <div className="absolute top-12 right-0 rounded-xl py-2 min-w-[180px] sm:min-w-[220px] z-50" style={{
               background: isDarkMode ? 'rgba(30, 35, 71, 0.98)' : 'rgba(255, 255, 255, 0.98)',
-              borderRadius: '12px',
-              padding: '8px 0',
-              minWidth: '220px',
               border: `2px solid ${theme.border.primary}`,
               boxShadow: isDarkMode ? '0 8px 32px rgba(0, 0, 0, 0.4)' : '0 8px 32px rgba(0, 0, 0, 0.15)',
               animation: 'fadeIn 0.2s ease'

@@ -384,6 +384,14 @@ export default function LoginScreen({ navigation }) {
               {/* Footer */}
               <View style={styles.footer}>
                 <Text style={styles.footerText}>National University</Text>
+
+                {/* Server Settings Button */}
+                <TouchableOpacity
+                  style={styles.settingsButton}
+                  onPress={() => navigation.navigate('ServerConfig', { isInitialSetup: false })}
+                >
+                  <Text style={styles.settingsButtonText}>⚙️ Server Settings</Text>
+                </TouchableOpacity>
               </View>
             </Animated.View>
           </ScrollView>
@@ -574,6 +582,16 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 13,
     color: 'rgba(251,251,251,0.4)',
+  },
+  settingsButton: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  settingsButtonText: {
+    fontSize: 13,
+    color: 'rgba(255,212,28,0.6)',
+    fontWeight: '500',
   },
 
   // Back Button
