@@ -13,6 +13,7 @@ import AdminLayout from './components/layouts/AdminLayout';
 import MerchantLayout from './components/layouts/MerchantLayout';
 import TreasuryLayout from './components/layouts/TreasuryLayout';
 import AccountingLayout from './components/layouts/AccountingLayout';
+import SysadLayout from './components/layouts/SysadLayout';
 import UserLayout from './components/layouts/UserLayout';
 
 // Route Guards
@@ -47,9 +48,9 @@ import TreasuryConfigPage from './pages/admin/Treasury/ConfigPage';
 
 // Accounting Pages
 import AccountingHome from './pages/admin/Accounting/AccountingHome';
+import AccountingMerchantsPage from './pages/admin/Accounting/MerchantsPage';
 // Reuse Treasury pages for read-only views
 import AccountingTransactionsPage from './pages/admin/Treasury/TransactionsPage';
-import AccountingMerchantsPage from './pages/admin/Treasury/MerchantsPage';
 
 // Shared Admin Pages
 import LogsPage from './pages/admin/Shared/Logs';
@@ -64,6 +65,16 @@ import Config from './pages/admin/Shared/Config';
 // User Pages
 import UserDashboard from './pages/user/UserDashboard';
 import TransactionHistory from './pages/user/TransactionHistory';
+import UserConcerns from './pages/user/UserConcerns';
+import UserProfile from './pages/user/UserProfile';
+import FAQ from './pages/user/FAQ';
+
+// System Admin Pages
+import SysadDashboard from './pages/admin/Sysad/Dashboard';
+import ManageUsers from './pages/admin/Sysad/ManageUsers';
+import TransferCard from './pages/admin/Sysad/TransferCard';
+import SysadConcernsPage from './pages/admin/Sysad/ConcernsPage';
+import SysadConfigPage from './pages/admin/Sysad/ConfigPage';
 
 // Protected Route wrapper for Motorpool Admin
 const MotorpoolProtectedRoute = ({ children }) => {
@@ -121,6 +132,17 @@ const UserProtectedRoute = ({ children }) => {
   return <UserLayout>{children}</UserLayout>;
 };
 
+// Protected Route wrapper for System Admin
+const SysadProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('adminToken');
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <SysadLayout>{children}</SysadLayout>;
+};
+
 function App() {
   return (
     <ThemeProvider>
@@ -146,6 +168,30 @@ function App() {
               element={
                 <UserProtectedRoute>
                   <TransactionHistory />
+                </UserProtectedRoute>
+              }
+            />
+            <Route
+              path="/user/concerns"
+              element={
+                <UserProtectedRoute>
+                  <UserConcerns />
+                </UserProtectedRoute>
+              }
+            />
+            <Route
+              path="/user/profile"
+              element={
+                <UserProtectedRoute>
+                  <UserProfile />
+                </UserProtectedRoute>
+              }
+            />
+            <Route
+              path="/faq"
+              element={
+                <UserProtectedRoute>
+                  <FAQ />
                 </UserProtectedRoute>
               }
             />
@@ -289,6 +335,67 @@ function App() {
             />
             {/* Accounting default redirect */}
             <Route path="/admin/accounting" element={<Navigate to="/admin/accounting/home" replace />} />
+
+            {/* ================= SYSTEM ADMIN ROUTES ================= */}
+            <Route
+              path="/admin/sysad/dashboard"
+              element={
+                <SysadProtectedRoute>
+                  <SysadDashboard />
+                </SysadProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/sysad/users"
+              element={
+                <SysadProtectedRoute>
+                  <ManageUsers />
+                </SysadProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/sysad/transfer-card"
+              element={
+                <SysadProtectedRoute>
+                  <TransferCard />
+                </SysadProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/sysad/logs"
+              element={
+                <SysadProtectedRoute>
+                  <LogsPage />
+                </SysadProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/sysad/concerns"
+              element={
+                <SysadProtectedRoute>
+                  <SysadConcernsPage />
+                </SysadProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/sysad/config"
+              element={
+                <SysadProtectedRoute>
+                  <SysadConfigPage />
+                </SysadProtectedRoute>
+              }
+            />
+            {/* Sysad Profile */}
+            <Route
+              path="/admin/sysad/profile"
+              element={
+                <SysadProtectedRoute>
+                  <ProfilePage />
+                </SysadProtectedRoute>
+              }
+            />
+            {/* Sysad default redirect */}
+            <Route path="/admin/sysad" element={<Navigate to="/admin/sysad/dashboard" replace />} />
 
             {/* ================= MOTORPOOL ADMIN ROUTES ================= */}
             <Route

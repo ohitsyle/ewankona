@@ -5,7 +5,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import ThemeToggle from '../common/ThemeToggle';
 
-export default function UserHeader({ userData, onLogout, onOpenSettings }) {
+export default function UserHeader({ userData, onLogout, onOpenProfile }) {
   const { theme, isDarkMode } = useTheme();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
@@ -113,13 +113,13 @@ export default function UserHeader({ userData, onLogout, onOpenSettings }) {
 
               {/* Menu Items */}
               <button
-                onClick={() => { setShowDropdown(false); onOpenSettings(); }}
+                onClick={() => { setShowDropdown(false); onOpenProfile && onOpenProfile(); }}
                 style={{ width: '100%', padding: '12px 16px', background: 'transparent', border: 'none', color: theme.text.primary, fontSize: '14px', fontWeight: 600, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s ease' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = isDarkMode ? 'rgba(255, 212, 28, 0.1)' : 'rgba(59, 130, 246, 0.1)'; e.currentTarget.style.color = theme.accent.primary; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.text.primary; }}
               >
-                <span style={{ fontSize: '16px' }}>⚙️</span>
-                <span>Settings</span>
+                <span style={{ fontSize: '16px' }}>👤</span>
+                <span>Manage Profile</span>
               </button>
 
               <div style={{ height: '1px', background: theme.border.primary, margin: '8px 0' }} />

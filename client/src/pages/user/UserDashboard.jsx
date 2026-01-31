@@ -1,10 +1,9 @@
 // src/pages/user/UserDashboard.jsx
-// PayPal-style User Dashboard with balance, transactions, concerns, and feedback
+// User Dashboard with balance, transactions, and concern/feedback modals
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../utils/api';
-import { Eye, EyeOff, Download, AlertCircle, MessageSquare, Calendar, FileText, ChevronRight } from 'lucide-react';
-import { submitAssistanceReport, getReportToOptions, submitFeedback } from '../../services/concernsApi';
+import { Eye, EyeOff, Download, Calendar, FileText, ChevronRight, X, ChevronLeft, Check } from 'lucide-react';
 
 export default function UserDashboard() {
   const { theme, isDarkMode } = useTheme();
@@ -14,7 +13,7 @@ export default function UserDashboard() {
   const [transactions, setTransactions] = useState([]);
   const [allTransactions, setAllTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('today'); // today, week, month
+  const [filter, setFilter] = useState('today');
   const intervalRef = useRef(null);
 
   // Modal states
@@ -25,13 +24,19 @@ export default function UserDashboard() {
     try {
       if (!silent) setLoading(true);
 
-      // Fetch user balance
+      // Fetch balance - this also returns user info including isActive
       const balanceData = await api.get('/user/balance');
       if (balanceData?.balance !== undefined) {
         setBalance(balanceData.balance);
       }
+      // Update userData with fresh isActive status from API
+      if (balanceData?.user || balanceData?.isActive !== undefined) {
+        setUserData(prev => ({
+          ...prev,
+          isActive: balanceData.user?.isActive ?? balanceData.isActive ?? prev?.isActive
+        }));
+      }
 
-      // Fetch all transactions (we'll filter locally for better UX)
       const txData = await api.get('/user/transactions?limit=100');
       if (txData?.transactions) {
         setAllTransactions(txData.transactions);
@@ -44,7 +49,6 @@ export default function UserDashboard() {
     }
   };
 
-  // Filter transactions based on selected period
   const filterTransactions = (txList, period) => {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -66,7 +70,6 @@ export default function UserDashboard() {
   };
 
   useEffect(() => {
-    // Get user data from localStorage
     const data = localStorage.getItem('userData');
     if (data && data !== 'undefined' && data !== 'null') {
       try {
@@ -77,8 +80,6 @@ export default function UserDashboard() {
     }
 
     fetchData();
-
-    // Auto-refresh every 10 seconds
     intervalRef.current = setInterval(() => fetchData(true), 10000);
 
     return () => {
@@ -86,12 +87,10 @@ export default function UserDashboard() {
     };
   }, []);
 
-  // Re-filter when filter changes
   useEffect(() => {
     filterTransactions(allTransactions, filter);
   }, [filter, allTransactions]);
 
-  // Export transactions to PDF-style format
   const handleExport = () => {
     const printWindow = window.open('', '_blank');
     const periodLabel = filter === 'today' ? 'Today' : filter === 'week' ? 'This Week' : 'This Month';
@@ -193,50 +192,93 @@ export default function UserDashboard() {
   }
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-5">
+    <div className="min-h-[calc(100vh-220px)] flex flex-col lg:flex-row gap-5">
       {/* Left Column - Balance + Actions */}
       <div className="w-full lg:w-[340px] flex flex-col gap-5 flex-shrink-0">
 
         {/* Balance Card */}
         <div
-          style={{ background: theme.bg.card, borderColor: theme.border.primary }}
-          className="p-6 rounded-2xl border relative overflow-hidden"
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, rgba(255,212,28,0.08) 0%, rgba(24,29,64,1) 100%)'
+              : 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(255,255,255,1) 100%)',
+            borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)',
+            boxShadow: isDarkMode
+              ? '0 8px 32px rgba(255,212,28,0.15)'
+              : '0 8px 32px rgba(59,130,246,0.15)'
+          }}
+          className="p-6 rounded-2xl border-2 relative overflow-hidden"
         >
-          <div className="absolute right-4 top-4 text-[60px] opacity-10">💰</div>
+          {/* Decorative background pattern */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '-20px',
+              right: '-20px',
+              width: '120px',
+              height: '120px',
+              background: isDarkMode
+                ? 'radial-gradient(circle, rgba(255,212,28,0.15) 0%, transparent 70%)'
+                : 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)',
+              borderRadius: '50%'
+            }}
+          />
 
-          <div className="flex items-center justify-between mb-3">
-            <div style={{ color: theme.text.secondary }} className="text-xs font-bold uppercase tracking-wide">
+          <div className="flex items-center justify-between mb-4">
+            <div style={{ color: theme.accent.primary }} className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+              <div
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: userData?.isActive !== false ? '#10B981' : '#EF4444',
+                  boxShadow: userData?.isActive !== false ? '0 0 8px rgba(16,185,129,0.6)' : '0 0 8px rgba(239,68,68,0.6)'
+                }}
+              />
               NUCash Balance
             </div>
             <button
               onClick={() => setShowBalance(!showBalance)}
-              style={{ color: theme.text.secondary }}
-              className="p-2 rounded-lg hover:bg-white/10 transition"
+              style={{
+                color: theme.text.secondary,
+                background: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`
+              }}
+              className="p-2.5 rounded-xl hover:opacity-80 transition"
             >
               {showBalance ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
 
           <div className="relative z-10">
-            <div style={{ color: '#10B981' }} className="text-4xl font-extrabold mb-3">
+            <div
+              style={{
+                color: showBalance ? '#10B981' : theme.text.tertiary,
+                fontFamily: 'system-ui, -apple-system, sans-serif'
+              }}
+              className="text-4xl font-extrabold mb-4 tracking-tight"
+            >
               {showBalance
-                ? `P${balance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
-                : 'P *** ***.**'
+                ? `₱${balance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+                : '₱ •••••.••'
               }
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <div
-                style={{
-                  background: userData?.isActive ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-                  color: userData?.isActive ? '#10B981' : '#EF4444'
-                }}
-                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-              >
-                {userData?.isActive ? 'ACTIVE' : 'INACTIVE'}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div
+                  style={{
+                    background: userData?.isActive !== false ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                    color: userData?.isActive !== false ? '#10B981' : '#EF4444',
+                    border: `1px solid ${userData?.isActive !== false ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`
+                  }}
+                  className="px-3 py-1 rounded-full text-[11px] font-bold"
+                >
+                  {userData?.isActive !== false ? '● ACTIVE' : '○ INACTIVE'}
+                </div>
               </div>
-              <span style={{ color: theme.text.tertiary }} className="text-xs">
-                {userData?.schoolUId}
+              <span style={{ color: theme.text.tertiary }} className="text-xs font-medium">
+                ID: {userData?.schoolUId || '—'}
               </span>
             </div>
           </div>
@@ -289,7 +331,7 @@ export default function UserDashboard() {
       {/* Right Column - Transactions */}
       <div
         style={{ background: theme.bg.card, borderColor: theme.border.primary }}
-        className="flex-1 rounded-2xl border overflow-hidden flex flex-col min-h-[400px]"
+        className="flex-1 rounded-2xl border overflow-hidden flex flex-col"
       >
         {/* Header */}
         <div style={{ borderColor: theme.border.primary }} className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -385,7 +427,6 @@ export default function UserDashboard() {
       {/* Concern Modal */}
       {showConcernModal && (
         <ConcernModal
-          isOpen={showConcernModal}
           onClose={() => setShowConcernModal(false)}
           theme={theme}
           isDarkMode={isDarkMode}
@@ -395,7 +436,6 @@ export default function UserDashboard() {
       {/* Feedback Modal */}
       {showFeedbackModal && (
         <FeedbackModal
-          isOpen={showFeedbackModal}
           onClose={() => setShowFeedbackModal(false)}
           theme={theme}
           isDarkMode={isDarkMode}
@@ -406,300 +446,391 @@ export default function UserDashboard() {
 }
 
 // =========================================
-// CONCERN MODAL COMPONENT
+// CONCERN MODAL - Step-by-step flow
 // =========================================
-function ConcernModal({ isOpen, onClose, theme, isDarkMode }) {
-  const [reportTo, setReportTo] = useState("");
-  const [selectedMerchant, setSelectedMerchant] = useState("");
-  const [subject, setSubject] = useState("");
-  const [concern, setConcern] = useState("");
-  const [otherConcern, setOtherConcern] = useState("");
-  const [plateNumber, setPlateNumber] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
+function ConcernModal({ onClose, theme, isDarkMode }) {
+  const [step, setStep] = useState(1); // 1: Department, 2: Merchant (if needed), 3: Details, 4: Summary, 5: Success
+  const [department, setDepartment] = useState('');
+  const [merchant, setMerchant] = useState('');
+  const [merchants, setMerchants] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [details, setDetails] = useState('');
   const [loading, setLoading] = useState(false);
-  const [merchantOptions, setMerchantOptions] = useState([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [loadingMerchants, setLoadingMerchants] = useState(false);
 
-  const reportToOptions = [
-    { value: "ITSO", label: "ITSO" },
-    { value: "Treasury Office", label: "Treasury Office" },
-    { value: "NU Shuttle Service", label: "NU Shuttle Service" },
-    { value: "Merchants", label: "Merchants" }
+  const departments = [
+    { value: 'sysad', label: 'NUCash System', icon: '💻', desc: 'Technical issues, app problems' },
+    { value: 'treasury', label: 'Finance', icon: '💰', desc: 'Balance, cash-in, payments' },
+    { value: 'merchants', label: 'Merchants', icon: '🏪', desc: 'Store-related concerns' },
+    { value: 'motorpool', label: 'Shuttle Service', icon: '🚐', desc: 'Transportation concerns' }
   ];
-
-  const ITSOConcerns = [
-    "The system doesn't recognize my ID / Unable to tap ID",
-    "My RFID card is damaged or not working",
-    "Others"
-  ];
-
-  const treasuryConcerns = [
-    "Cash-in transaction not reflected in account",
-    "Incorrect amount loaded to account",
-    "Account balance discrepancy after cash-in",
-    "Others"
-  ];
-
-  const isShuttleService = reportTo === "NU Shuttle Service";
-  const isMerchants = reportTo === "Merchants";
-
-  const getConcerns = () => {
-    if (reportTo === "ITSO") return ITSOConcerns;
-    if (reportTo === "Treasury Office") return treasuryConcerns;
-    return [];
-  };
-
-  const concerns = getConcerns();
 
   useEffect(() => {
-    if (isOpen && merchantOptions.length === 0) {
-      fetchMerchantOptions();
+    if (department === 'merchants') {
+      fetchMerchants();
     }
-  }, [isOpen]);
+  }, [department]);
 
-  const fetchMerchantOptions = async () => {
-    setLoadingOptions(true);
+  const fetchMerchants = async () => {
+    setLoadingMerchants(true);
     try {
-      const response = await getReportToOptions();
+      const response = await api.get('/user/merchants');
       if (response.success) {
-        const merchants = response.options.filter(
-          opt => !["ITSO", "Treasury Office", "NU Shuttle Service"].includes(opt.value)
-        );
-        setMerchantOptions(merchants);
+        setMerchants(response.merchants);
       }
     } catch (error) {
-      console.error('Failed to fetch merchant options:', error);
+      console.error('Failed to fetch merchants');
+      setMerchants([]);
     } finally {
-      setLoadingOptions(false);
+      setLoadingMerchants(false);
+    }
+  };
+
+  const handleNext = () => {
+    if (step === 1 && department) {
+      if (department === 'merchants') {
+        setStep(2);
+      } else {
+        setStep(3);
+      }
+    } else if (step === 2 && merchant) {
+      setStep(3);
+    } else if (step === 3 && subject && details) {
+      setStep(4);
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 2) {
+      setStep(1);
+      setMerchant('');
+    } else if (step === 3) {
+      if (department === 'merchants') {
+        setStep(2);
+      } else {
+        setStep(1);
+      }
+    } else if (step === 4) {
+      setStep(3);
     }
   };
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const reportData = {
-        reportTo: isMerchants ? selectedMerchant : reportTo,
-        concern: isShuttleService ? "Shuttle Service Concern" : concern,
-        subject: isMerchants ? subject : (concern === "Others" ? subject : concern),
-        otherConcern: isShuttleService ? otherConcern : (isMerchants ? otherConcern : (concern === "Others" ? otherConcern : "")),
-        plateNumber: isShuttleService ? plateNumber : undefined
-      };
-
-      const response = await submitAssistanceReport(reportData);
+      const response = await api.post('/user/concerns', {
+        department,
+        merchant: department === 'merchants' ? merchant : undefined,
+        subject,
+        details
+      });
 
       if (response.success) {
-        setShowSuccess(true);
-        setTimeout(onClose, 1500);
+        setStep(5);
       }
     } catch (error) {
-      console.error('Submit error:', error);
+      console.error('Failed to submit concern');
     } finally {
       setLoading(false);
     }
   };
 
-  const isFormValid = reportTo && (
-    isShuttleService
-      ? (plateNumber.trim() && otherConcern.trim())
-      : isMerchants
-        ? (selectedMerchant && subject.trim() && otherConcern.trim())
-        : (concern && (concern !== "Others" || (subject.trim() && otherConcern.trim())))
-  );
+  const getDepartmentLabel = () => {
+    const dept = departments.find(d => d.value === department);
+    return dept ? dept.label : '';
+  };
 
-  if (!isOpen) return null;
+  const inputStyle = {
+    width: '100%',
+    padding: '14px 16px',
+    background: isDarkMode ? 'rgba(15,18,39,0.6)' : '#F9FAFB',
+    border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)'}`,
+    borderRadius: '12px',
+    color: theme.text.primary,
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'all 0.2s ease'
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border">
-        <div style={{ borderColor: theme.border.primary }} className="p-5 border-b flex justify-between items-center">
-          <h3 style={{ color: theme.accent.primary }} className="text-lg font-bold">🆘 Report a Concern</h3>
-          <button onClick={onClose} style={{ color: theme.text.secondary }} className="hover:opacity-75 text-xl">×</button>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+
+      <div
+        style={{
+          background: isDarkMode
+            ? 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)'
+            : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
+          border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`
+        }}
+        className="relative rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+        style={{
+          background: isDarkMode
+            ? 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)'
+            : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
+          border: `2px solid ${isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'}`,
+          boxShadow: isDarkMode
+            ? '0 25px 50px rgba(0,0,0,0.5)'
+            : '0 25px 50px rgba(0,0,0,0.15)'
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, rgba(245,158,11,0.2) 0%, rgba(245,158,11,0.05) 100%)'
+              : 'linear-gradient(135deg, rgba(245,158,11,0.15) 0%, rgba(245,158,11,0.05) 100%)',
+            borderBottom: `2px solid ${isDarkMode ? 'rgba(245,158,11,0.3)' : 'rgba(245,158,11,0.2)'}`
+          }}
+          className="px-6 py-5 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div style={{ background: 'rgba(245,158,11,0.2)' }} className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl">
+              🆘
+            </div>
+            <div>
+              <h2 style={{ color: '#F59E0B' }} className="text-xl font-bold">Report a Concern</h2>
+              <p style={{ color: theme.text.secondary }} className="text-sm">
+                {step < 5 ? `Step ${step} of 4` : 'Complete'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ color: theme.text.secondary }} className="p-2 hover:opacity-70 transition">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          {showSuccess ? (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">✅</span>
-              </div>
-              <h4 className="text-green-500 text-xl font-bold mb-2">Report Submitted!</h4>
-              <p style={{ color: theme.text.secondary }} className="text-sm">We'll get back to you soon.</p>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                  Report To: <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={reportTo}
-                  onChange={(e) => {
-                    setReportTo(e.target.value);
-                    setSelectedMerchant("");
-                    setConcern("");
-                    setOtherConcern("");
-                    setSubject("");
-                    setPlateNumber("");
+        {/* Progress Bar */}
+        {step < 5 && (
+          <div style={{ background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)' }} className="h-1">
+            <div
+              style={{
+                width: `${(step / 4) * 100}%`,
+                background: '#F59E0B',
+                transition: 'width 0.3s ease'
+              }}
+              className="h-full"
+            />
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="p-6 max-h-[60vh] overflow-y-auto">
+          {/* Step 1: Select Department */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Select the department you want to report to:
+              </p>
+              {departments.map((dept) => (
+                <button
+                  key={dept.value}
+                  onClick={() => setDepartment(dept.value)}
+                  style={{
+                    background: department === dept.value
+                      ? (isDarkMode ? 'rgba(245,158,11,0.2)' : 'rgba(245,158,11,0.15)')
+                      : (isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    border: `2px solid ${department === dept.value
+                      ? '#F59E0B'
+                      : (isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`
                   }}
-                  style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                  className="w-full border rounded-lg px-4 py-3 focus:outline-none"
+                  className="w-full p-4 rounded-xl flex items-center gap-4 transition-all hover:scale-[1.02] text-left"
                 >
-                  <option value="">Select department</option>
-                  {reportToOptions.map((opt, i) => <option key={i} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </div>
-
-              {isMerchants && (
-                <div>
-                  <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                    Select Merchant: <span className="text-red-400">*</span>
-                  </label>
-                  <select
-                    value={selectedMerchant}
-                    onChange={(e) => setSelectedMerchant(e.target.value)}
-                    disabled={loadingOptions}
-                    style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                    className="w-full border rounded-lg px-4 py-3 focus:outline-none disabled:opacity-50"
-                  >
-                    <option value="">{loadingOptions ? 'Loading...' : 'Select merchant'}</option>
-                    {merchantOptions.map((m, i) => <option key={i} value={m.value}>{m.label}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {isShuttleService ? (
-                <>
-                  <div>
-                    <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                      Plate Number: <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={plateNumber}
-                      onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                      placeholder="e.g., ABC 1234"
-                      style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                      className="w-full border rounded-lg px-4 py-3 focus:outline-none font-mono"
-                    />
+                  <div style={{ background: 'rgba(245,158,11,0.15)' }} className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                    {dept.icon}
                   </div>
-                  <div>
-                    <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                      Concern: <span className="text-red-400">*</span>
-                    </label>
-                    <textarea
-                      value={otherConcern}
-                      onChange={(e) => setOtherConcern(e.target.value)}
-                      placeholder="Describe your concern..."
-                      rows={4}
-                      style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                      className="w-full border rounded-lg px-4 py-3 focus:outline-none resize-none"
-                    />
+                  <div className="flex-1">
+                    <p style={{ color: theme.text.primary }} className="font-bold">{dept.label}</p>
+                    <p style={{ color: theme.text.secondary }} className="text-sm">{dept.desc}</p>
                   </div>
-                </>
-              ) : isMerchants && selectedMerchant ? (
-                <>
-                  <div>
-                    <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                      Subject: <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="Brief description"
-                      style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                      className="w-full border rounded-lg px-4 py-3 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                      Details: <span className="text-red-400">*</span>
-                    </label>
-                    <textarea
-                      value={otherConcern}
-                      onChange={(e) => setOtherConcern(e.target.value)}
-                      placeholder="Describe your concern..."
-                      rows={4}
-                      style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                      className="w-full border rounded-lg px-4 py-3 focus:outline-none resize-none"
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  {reportTo && concerns.length > 0 && (
-                    <div>
-                      <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                        Concern: <span className="text-red-400">*</span>
-                      </label>
-                      <select
-                        value={concern}
-                        onChange={(e) => setConcern(e.target.value)}
-                        style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                        className="w-full border rounded-lg px-4 py-3 focus:outline-none"
-                      >
-                        <option value="">Select concern</option>
-                        {concerns.map((c, i) => <option key={i} value={c}>{c}</option>)}
-                      </select>
+                  {department === dept.value && (
+                    <div style={{ background: '#F59E0B' }} className="w-6 h-6 rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
-                  {concern === "Others" && (
-                    <>
-                      <div>
-                        <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                          Subject: <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={subject}
-                          onChange={(e) => setSubject(e.target.value)}
-                          placeholder="Brief description"
-                          style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                          className="w-full border rounded-lg px-4 py-3 focus:outline-none"
-                        />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 2: Select Merchant (only if merchants selected) */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Select the merchant you want to report:
+              </p>
+              {loadingMerchants ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin w-8 h-8 border-4 border-t-transparent rounded-full mx-auto mb-3" style={{ borderColor: '#F59E0B transparent transparent transparent' }} />
+                  <p style={{ color: theme.text.secondary }}>Loading merchants...</p>
+                </div>
+              ) : merchants.length === 0 ? (
+                <div className="text-center py-8">
+                  <p style={{ color: theme.text.secondary }}>No merchants available</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[40vh] overflow-y-auto">
+                  {merchants.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setMerchant(m.value)}
+                      style={{
+                        background: merchant === m.value
+                          ? (isDarkMode ? 'rgba(245,158,11,0.2)' : 'rgba(245,158,11,0.15)')
+                          : (isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                        border: `2px solid ${merchant === m.value
+                          ? '#F59E0B'
+                          : (isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`
+                      }}
+                      className="w-full p-4 rounded-xl flex items-center gap-4 transition-all hover:scale-[1.01] text-left"
+                    >
+                      <div style={{ background: 'rgba(245,158,11,0.15)' }} className="w-10 h-10 rounded-lg flex items-center justify-center text-xl">
+                        🏪
                       </div>
-                      <div>
-                        <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                          Details: <span className="text-red-400">*</span>
-                        </label>
-                        <textarea
-                          value={otherConcern}
-                          onChange={(e) => setOtherConcern(e.target.value)}
-                          placeholder="Describe your concern..."
-                          rows={4}
-                          style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                          className="w-full border rounded-lg px-4 py-3 focus:outline-none resize-none"
-                        />
-                      </div>
-                    </>
-                  )}
-                </>
+                      <p style={{ color: theme.text.primary }} className="font-semibold flex-1">{m.label}</p>
+                      {merchant === m.value && (
+                        <div style={{ background: '#F59E0B' }} className="w-6 h-6 rounded-full flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
               )}
-            </>
+            </div>
+          )}
+
+          {/* Step 3: Enter Details */}
+          {step === 3 && (
+            <div className="space-y-5">
+              <div>
+                <label style={{ color: theme.text.primary }} className="block font-semibold mb-2">
+                  Subject <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Brief description of your concern"
+                  style={inputStyle}
+                  onFocus={(e) => e.target.style.borderColor = '#F59E0B'}
+                  onBlur={(e) => e.target.style.borderColor = isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)'}
+                />
+              </div>
+              <div>
+                <label style={{ color: theme.text.primary }} className="block font-semibold mb-2">
+                  Details <span className="text-red-400">*</span>
+                </label>
+                <textarea
+                  value={details}
+                  onChange={(e) => setDetails(e.target.value)}
+                  placeholder="Please provide more details about your concern..."
+                  rows={5}
+                  style={{ ...inputStyle, resize: 'none' }}
+                  onFocus={(e) => e.target.style.borderColor = '#F59E0B'}
+                  onBlur={(e) => e.target.style.borderColor = isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)'}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Summary */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Please review your concern before submitting:
+              </p>
+              <div
+                style={{
+                  background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+                  border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`
+                }}
+                className="rounded-xl p-5 space-y-4"
+              >
+                <div>
+                  <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Department</p>
+                  <p style={{ color: theme.text.primary }} className="font-semibold">{getDepartmentLabel()}</p>
+                </div>
+                {department === 'merchants' && merchant && (
+                  <div>
+                    <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Merchant</p>
+                    <p style={{ color: theme.text.primary }} className="font-semibold">{merchant}</p>
+                  </div>
+                )}
+                <div>
+                  <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Subject</p>
+                  <p style={{ color: theme.text.primary }} className="font-semibold">{subject}</p>
+                </div>
+                <div>
+                  <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Details</p>
+                  <p style={{ color: theme.text.primary }} className="text-sm whitespace-pre-wrap">{details}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Success */}
+          {step === 5 && (
+            <div className="text-center py-8">
+              <div style={{ background: 'rgba(16,185,129,0.2)' }} className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5">
+                <Check className="w-10 h-10 text-emerald-500" />
+              </div>
+              <h3 style={{ color: '#10B981' }} className="text-2xl font-bold mb-2">Concern Submitted!</h3>
+              <p style={{ color: theme.text.secondary }} className="mb-4">
+                Your concern has been received. You can track it in your Concerns tab.
+              </p>
+              <button
+                onClick={onClose}
+                style={{ background: '#F59E0B', color: '#FFFFFF' }}
+                className="px-8 py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90"
+              >
+                Done
+              </button>
+            </div>
           )}
         </div>
 
-        {!showSuccess && (
-          <div style={{ borderColor: theme.border.primary }} className="flex justify-end gap-3 px-6 py-4 border-t">
-            <button
-              onClick={onClose}
-              disabled={loading}
-              style={{ background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', color: theme.text.primary }}
-              className="px-5 py-2.5 rounded-lg font-semibold disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!isFormValid || loading}
-              style={{
-                background: (!isFormValid || loading) ? '#6B7280' : theme.accent.primary,
-                color: (!isFormValid || loading) ? '#D1D5DB' : (isDarkMode ? '#181D40' : '#FFFFFF')
-              }}
-              className="px-5 py-2.5 rounded-lg font-bold disabled:cursor-not-allowed"
-            >
-              {loading ? 'Submitting...' : 'Submit'}
-            </button>
+        {/* Footer */}
+        {step < 5 && (
+          <div
+            style={{ borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}` }}
+            className="px-6 py-4 flex gap-3"
+          >
+            {step > 1 && (
+              <button
+                onClick={handleBack}
+                style={{
+                  background: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                  color: theme.text.primary
+                }}
+                className="flex-1 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-80"
+              >
+                <ChevronLeft className="w-5 h-5" /> Back
+              </button>
+            )}
+            {step < 4 ? (
+              <button
+                onClick={handleNext}
+                disabled={
+                  (step === 1 && !department) ||
+                  (step === 2 && !merchant) ||
+                  (step === 3 && (!subject || !details))
+                }
+                style={{ background: '#F59E0B', color: '#FFFFFF' }}
+                className="flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next <ChevronRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                style={{ background: '#10B981', color: '#FFFFFF' }}
+                className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? 'Submitting...' : 'Submit Concern'}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -708,137 +839,270 @@ function ConcernModal({ isOpen, onClose, theme, isDarkMode }) {
 }
 
 // =========================================
-// FEEDBACK MODAL COMPONENT
+// FEEDBACK MODAL - Step-by-step flow
 // =========================================
-function FeedbackModal({ isOpen, onClose, theme, isDarkMode }) {
-  const [reportTo, setReportTo] = useState("");
-  const [subject, setSubject] = useState("");
-  const [feedback, setFeedback] = useState("");
+function FeedbackModal({ onClose, theme, isDarkMode }) {
+  const [step, setStep] = useState(1); // 1: Department, 2: Merchant (if needed), 3: Rating + Details, 4: Summary, 5: Success
+  const [department, setDepartment] = useState('');
+  const [merchant, setMerchant] = useState('');
+  const [merchants, setMerchants] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [feedback, setFeedback] = useState('');
   const [rating, setRating] = useState(0);
   const [hoveredStar, setHoveredStar] = useState(0);
-  const [showSuccess, setShowSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [reportToOptions, setReportToOptions] = useState([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [loadingMerchants, setLoadingMerchants] = useState(false);
+
+  const departments = [
+    { value: 'sysad', label: 'NUCash System', icon: '💻', desc: 'App experience feedback' },
+    { value: 'treasury', label: 'Finance', icon: '💰', desc: 'Service experience' },
+    { value: 'merchants', label: 'Merchants', icon: '🏪', desc: 'Store experience' },
+    { value: 'motorpool', label: 'Shuttle Service', icon: '🚐', desc: 'Transport experience' }
+  ];
 
   useEffect(() => {
-    if (isOpen && reportToOptions.length === 0) {
-      fetchOptions();
+    if (department === 'merchants') {
+      fetchMerchants();
     }
-  }, [isOpen]);
+  }, [department]);
 
-  const fetchOptions = async () => {
-    setLoadingOptions(true);
+  const fetchMerchants = async () => {
+    setLoadingMerchants(true);
     try {
-      const response = await getReportToOptions();
+      const response = await api.get('/user/merchants');
       if (response.success) {
-        setReportToOptions(response.options);
+        setMerchants(response.merchants);
       }
     } catch (error) {
-      setReportToOptions([
-        { value: "ITSO", label: "ITSO" },
-        { value: "NU Shuttle Service", label: "NU Shuttle Service" }
-      ]);
+      setMerchants([]);
     } finally {
-      setLoadingOptions(false);
+      setLoadingMerchants(false);
+    }
+  };
+
+  const handleNext = () => {
+    if (step === 1 && department) {
+      if (department === 'merchants') {
+        setStep(2);
+      } else {
+        setStep(3);
+      }
+    } else if (step === 2 && merchant) {
+      setStep(3);
+    } else if (step === 3 && rating > 0) {
+      setStep(4);
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 2) {
+      setStep(1);
+      setMerchant('');
+    } else if (step === 3) {
+      if (department === 'merchants') {
+        setStep(2);
+      } else {
+        setStep(1);
+      }
+    } else if (step === 4) {
+      setStep(3);
     }
   };
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const response = await submitFeedback({
-        reportTo,
+      const response = await api.post('/user/feedback', {
+        department,
+        merchant: department === 'merchants' ? merchant : undefined,
         subject: subject || undefined,
         feedback: feedback || undefined,
         rating
       });
 
       if (response.success) {
-        setShowSuccess(true);
-        setTimeout(onClose, 1500);
+        setStep(5);
       }
     } catch (error) {
-      console.error('Submit feedback error:', error);
+      console.error('Failed to submit feedback');
     } finally {
       setLoading(false);
     }
   };
 
-  const isFormValid = reportTo && rating > 0;
+  const getDepartmentLabel = () => {
+    const dept = departments.find(d => d.value === department);
+    return dept ? dept.label : '';
+  };
 
-  if (!isOpen) return null;
+  const getRatingLabel = () => {
+    const labels = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
+    return labels[rating] || '';
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '14px 16px',
+    background: isDarkMode ? 'rgba(15,18,39,0.6)' : '#F9FAFB',
+    border: `2px solid ${isDarkMode ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.2)'}`,
+    borderRadius: '12px',
+    color: theme.text.primary,
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'all 0.2s ease'
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl w-full max-w-md overflow-hidden shadow-2xl border">
-        <div style={{ borderColor: theme.border.primary }} className="p-5 border-b flex justify-between items-center">
-          <h3 style={{ color: theme.accent.primary }} className="text-lg font-bold">💬 Share Feedback</h3>
-          <button onClick={onClose} style={{ color: theme.text.secondary }} className="hover:opacity-75 text-xl">×</button>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+
+      <div
+        style={{
+          background: isDarkMode
+            ? 'linear-gradient(135deg, #1E2347 0%, #181D40 100%)'
+            : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
+          border: `2px solid ${isDarkMode ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.3)'}`,
+          boxShadow: isDarkMode
+            ? '0 25px 50px rgba(0,0,0,0.5)'
+            : '0 25px 50px rgba(0,0,0,0.15)'
+        }}
+        className="relative rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+      >
+        {/* Header */}
+        <div
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(59,130,246,0.05) 100%)'
+              : 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 100%)',
+            borderBottom: `2px solid ${isDarkMode ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.2)'}`
+          }}
+          className="px-6 py-5 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div style={{ background: 'rgba(59,130,246,0.2)' }} className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl">
+              💬
+            </div>
+            <div>
+              <h2 style={{ color: '#3B82F6' }} className="text-xl font-bold">Share Feedback</h2>
+              <p style={{ color: theme.text.secondary }} className="text-sm">
+                {step < 5 ? `Step ${step} of 4` : 'Complete'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ color: theme.text.secondary }} className="p-2 hover:opacity-70 transition">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          {showSuccess ? (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">✅</span>
-              </div>
-              <h4 className="text-green-500 text-xl font-bold mb-2">Feedback Submitted!</h4>
-              <p style={{ color: theme.text.secondary }} className="text-sm">Thank you for your feedback!</p>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                  Report To: <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={reportTo}
-                  onChange={(e) => setReportTo(e.target.value)}
-                  disabled={loadingOptions}
-                  style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                  className="w-full border rounded-lg px-4 py-3 focus:outline-none disabled:opacity-50"
+        {/* Progress Bar */}
+        {step < 5 && (
+          <div style={{ background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)' }} className="h-1">
+            <div
+              style={{
+                width: `${(step / 4) * 100}%`,
+                background: '#3B82F6',
+                transition: 'width 0.3s ease'
+              }}
+              className="h-full"
+            />
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="p-6 max-h-[60vh] overflow-y-auto">
+          {/* Step 1: Select Department */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Select what you want to give feedback about:
+              </p>
+              {departments.map((dept) => (
+                <button
+                  key={dept.value}
+                  onClick={() => setDepartment(dept.value)}
+                  style={{
+                    background: department === dept.value
+                      ? (isDarkMode ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.15)')
+                      : (isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    border: `2px solid ${department === dept.value
+                      ? '#3B82F6'
+                      : (isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`
+                  }}
+                  className="w-full p-4 rounded-xl flex items-center gap-4 transition-all hover:scale-[1.02] text-left"
                 >
-                  <option value="">{loadingOptions ? 'Loading...' : 'Select department'}</option>
-                  {reportToOptions.map((opt, i) => <option key={i} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </div>
+                  <div style={{ background: 'rgba(59,130,246,0.15)' }} className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                    {dept.icon}
+                  </div>
+                  <div className="flex-1">
+                    <p style={{ color: theme.text.primary }} className="font-bold">{dept.label}</p>
+                    <p style={{ color: theme.text.secondary }} className="text-sm">{dept.desc}</p>
+                  </div>
+                  {department === dept.value && (
+                    <div style={{ background: '#3B82F6' }} className="w-6 h-6 rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
-              <div>
-                <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                  Subject: <span style={{ color: theme.text.tertiary }}>(Optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="What's this about?"
-                  maxLength={100}
-                  style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                  className="w-full border rounded-lg px-4 py-3 focus:outline-none"
-                />
-              </div>
+          {/* Step 2: Select Merchant */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Select the merchant:
+              </p>
+              {loadingMerchants ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin w-8 h-8 border-4 border-t-transparent rounded-full mx-auto mb-3" style={{ borderColor: '#3B82F6 transparent transparent transparent' }} />
+                  <p style={{ color: theme.text.secondary }}>Loading merchants...</p>
+                </div>
+              ) : merchants.length === 0 ? (
+                <div className="text-center py-8">
+                  <p style={{ color: theme.text.secondary }}>No merchants available</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[40vh] overflow-y-auto">
+                  {merchants.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setMerchant(m.value)}
+                      style={{
+                        background: merchant === m.value
+                          ? (isDarkMode ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.15)')
+                          : (isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                        border: `2px solid ${merchant === m.value
+                          ? '#3B82F6'
+                          : (isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`
+                      }}
+                      className="w-full p-4 rounded-xl flex items-center gap-4 transition-all hover:scale-[1.01] text-left"
+                    >
+                      <div style={{ background: 'rgba(59,130,246,0.15)' }} className="w-10 h-10 rounded-lg flex items-center justify-center text-xl">
+                        🏪
+                      </div>
+                      <p style={{ color: theme.text.primary }} className="font-semibold flex-1">{m.label}</p>
+                      {merchant === m.value && (
+                        <div style={{ background: '#3B82F6' }} className="w-6 h-6 rounded-full flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Step 3: Rating + Optional Details */}
+          {step === 3 && (
+            <div className="space-y-6">
+              {/* Star Rating */}
               <div>
-                <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-2">
-                  Feedback: <span style={{ color: theme.text.tertiary }}>(Optional)</span>
+                <label style={{ color: theme.text.primary }} className="block font-semibold mb-3">
+                  Your Rating <span className="text-red-400">*</span>
                 </label>
-                <textarea
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="Share your thoughts..."
-                  rows={3}
-                  maxLength={500}
-                  style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', color: theme.text.primary, borderColor: theme.border.primary }}
-                  className="w-full border rounded-lg px-4 py-3 focus:outline-none resize-none"
-                />
-              </div>
-
-              <div>
-                <label style={{ color: theme.text.secondary }} className="block text-sm font-semibold mb-3">
-                  Rating: <span className="text-red-400">*</span>
-                </label>
-                <div className="flex gap-2 justify-center">
+                <div className="flex justify-center gap-2 mb-2">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
@@ -849,7 +1113,7 @@ function FeedbackModal({ isOpen, onClose, theme, isDarkMode }) {
                       className="transition-transform hover:scale-110"
                     >
                       <svg
-                        className="w-10 h-10"
+                        className="w-12 h-12"
                         fill={star <= (hoveredStar || rating) ? "#FFD41C" : "none"}
                         stroke="#FFD41C"
                         strokeWidth="2"
@@ -861,36 +1125,167 @@ function FeedbackModal({ isOpen, onClose, theme, isDarkMode }) {
                   ))}
                 </div>
                 {rating > 0 && (
-                  <p style={{ color: theme.text.secondary }} className="text-xs mt-2 text-center">
-                    You rated: {rating} star{rating !== 1 ? 's' : ''}
+                  <p style={{ color: '#FFD41C' }} className="text-center font-semibold">
+                    {getRatingLabel()}
                   </p>
                 )}
               </div>
-            </>
+
+              {/* Optional Subject */}
+              <div>
+                <label style={{ color: theme.text.primary }} className="block font-semibold mb-2">
+                  Subject <span style={{ color: theme.text.tertiary }} className="font-normal text-sm">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="What's this about?"
+                  style={inputStyle}
+                  onFocus={(e) => e.target.style.borderColor = '#3B82F6'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(59,130,246,0.2)'}
+                />
+              </div>
+
+              {/* Optional Feedback */}
+              <div>
+                <label style={{ color: theme.text.primary }} className="block font-semibold mb-2">
+                  Feedback <span style={{ color: theme.text.tertiary }} className="font-normal text-sm">(Optional)</span>
+                </label>
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="Share your thoughts..."
+                  rows={4}
+                  style={{ ...inputStyle, resize: 'none' }}
+                  onFocus={(e) => e.target.style.borderColor = '#3B82F6'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(59,130,246,0.2)'}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Summary */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <p style={{ color: theme.text.secondary }} className="text-sm mb-4">
+                Please review your feedback before submitting:
+              </p>
+              <div
+                style={{
+                  background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+                  border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`
+                }}
+                className="rounded-xl p-5 space-y-4"
+              >
+                <div>
+                  <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Department</p>
+                  <p style={{ color: theme.text.primary }} className="font-semibold">{getDepartmentLabel()}</p>
+                </div>
+                {department === 'merchants' && merchant && (
+                  <div>
+                    <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Merchant</p>
+                    <p style={{ color: theme.text.primary }} className="font-semibold">{merchant}</p>
+                  </div>
+                )}
+                <div>
+                  <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Rating</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <svg
+                          key={star}
+                          className="w-5 h-5"
+                          fill={star <= rating ? "#FFD41C" : "none"}
+                          stroke="#FFD41C"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      ))}
+                    </div>
+                    <span style={{ color: '#FFD41C' }} className="font-semibold">{getRatingLabel()}</span>
+                  </div>
+                </div>
+                {subject && (
+                  <div>
+                    <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Subject</p>
+                    <p style={{ color: theme.text.primary }} className="font-semibold">{subject}</p>
+                  </div>
+                )}
+                {feedback && (
+                  <div>
+                    <p style={{ color: theme.text.secondary }} className="text-xs uppercase tracking-wide mb-1">Feedback</p>
+                    <p style={{ color: theme.text.primary }} className="text-sm whitespace-pre-wrap">{feedback}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Success */}
+          {step === 5 && (
+            <div className="text-center py-8">
+              <div style={{ background: 'rgba(16,185,129,0.2)' }} className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5">
+                <Check className="w-10 h-10 text-emerald-500" />
+              </div>
+              <h3 style={{ color: '#10B981' }} className="text-2xl font-bold mb-2">Feedback Submitted!</h3>
+              <p style={{ color: theme.text.secondary }} className="mb-4">
+                Thank you for your feedback! You can track it in your Concerns tab.
+              </p>
+              <button
+                onClick={onClose}
+                style={{ background: '#3B82F6', color: '#FFFFFF' }}
+                className="px-8 py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90"
+              >
+                Done
+              </button>
+            </div>
           )}
         </div>
 
-        {!showSuccess && (
-          <div style={{ borderColor: theme.border.primary }} className="flex justify-end gap-3 px-6 py-4 border-t">
-            <button
-              onClick={onClose}
-              disabled={loading}
-              style={{ background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', color: theme.text.primary }}
-              className="px-5 py-2.5 rounded-lg font-semibold disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!isFormValid || loading}
-              style={{
-                background: (!isFormValid || loading) ? '#6B7280' : theme.accent.primary,
-                color: (!isFormValid || loading) ? '#D1D5DB' : (isDarkMode ? '#181D40' : '#FFFFFF')
-              }}
-              className="px-5 py-2.5 rounded-lg font-bold disabled:cursor-not-allowed"
-            >
-              {loading ? 'Submitting...' : 'Submit'}
-            </button>
+        {/* Footer */}
+        {step < 5 && (
+          <div
+            style={{ borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}` }}
+            className="px-6 py-4 flex gap-3"
+          >
+            {step > 1 && (
+              <button
+                onClick={handleBack}
+                style={{
+                  background: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                  color: theme.text.primary
+                }}
+                className="flex-1 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-80"
+              >
+                <ChevronLeft className="w-5 h-5" /> Back
+              </button>
+            )}
+            {step < 4 ? (
+              <button
+                onClick={handleNext}
+                disabled={
+                  (step === 1 && !department) ||
+                  (step === 2 && !merchant) ||
+                  (step === 3 && rating === 0)
+                }
+                style={{ background: '#3B82F6', color: '#FFFFFF' }}
+                className="flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next <ChevronRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                style={{ background: '#10B981', color: '#FFFFFF' }}
+                className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? 'Submitting...' : 'Submit Feedback'}
+              </button>
+            )}
           </div>
         )}
       </div>

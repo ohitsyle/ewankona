@@ -38,9 +38,19 @@ router.post('/check-account', async (req, res) => {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    // Verify PIN
+    // Verify PIN - handle both hashed and plain text PINs
     const bcrypt = await import('bcrypt');
-    const isPinValid = await bcrypt.default.compare(pin, account.pin || account.password);
+    const storedPin = account.pin || account.password;
+    let isPinValid = false;
+
+    // Check if PIN is hashed (starts with bcrypt prefix)
+    if (storedPin && (storedPin.startsWith('$2b$') || storedPin.startsWith('$2a$'))) {
+      // Hashed PIN - use bcrypt compare
+      isPinValid = await bcrypt.default.compare(pin, storedPin);
+    } else {
+      // Plain text PIN (temporary PIN from registration)
+      isPinValid = storedPin === pin;
+    }
 
     if (!isPinValid) {
       return res.status(401).json({ error: 'Invalid PIN' });
@@ -134,7 +144,7 @@ router.post('/accept-terms', async (req, res) => {
 });
 
 // POST /api/activation/set-new-pin
-// Set new PIN after terms acceptance
+// Set new PIN after terms acceptance (uses findByIdAndUpdate to avoid full-doc save overwrites)
 router.post('/set-new-pin', async (req, res) => {
   try {
     const { accountId, accountType, newPin } = req.body;
@@ -158,11 +168,10 @@ router.post('/set-new-pin', async (req, res) => {
       Model = User;
     }
 
-    // Find account
-    const account = await Model.findById(accountId);
-
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' });
+    if (accountType === 'user') {
+      console.log(`[Activation] set-new-pin called for user accountId: ${accountId}`);
+      const countBefore = await Model.countDocuments();
+      console.log(`[Activation] User count before set-new-pin: ${countBefore}`);
     }
 
     // Hash new PIN
@@ -174,12 +183,21 @@ router.post('/set-new-pin', async (req, res) => {
     const otp = generateOTP();
     const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes (timestamp)
 
-    // Update account with new PIN and OTP
-    account.pin = hashedPin;
-    account.resetOtp = otp;
-    account.resetOtpExpireAt = otpExpiry;
+    // Update only these fields (avoids full-doc save that could overwrite other fields)
+    const account = await Model.findByIdAndUpdate(
+      accountId,
+      { $set: { pin: hashedPin, resetOtp: otp, resetOtpExpireAt: new Date(otpExpiry) } },
+      { new: true, runValidators: true }
+    );
 
-    await account.save();
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    if (accountType === 'user') {
+      const countAfter = await Model.countDocuments();
+      console.log(`[Activation] User count after set-new-pin: ${countAfter}`);
+    }
 
     // Send OTP via email
     const { sendActivationOTP } = await import('../services/emailService.js');
@@ -198,8 +216,7 @@ router.post('/set-new-pin', async (req, res) => {
 });
 
 // POST /api/activation/verify-otp
-// Verify OTP and activate account
-// Sets isActive = true (password changed from system-generated)
+// Verify OTP and activate account (uses findByIdAndUpdate to avoid full-doc save overwrites)
 router.post('/verify-otp', async (req, res) => {
   try {
     const { accountId, accountType, otp } = req.body;
@@ -218,7 +235,7 @@ router.post('/verify-otp', async (req, res) => {
       Model = User;
     }
 
-    // Find account
+    // Find account (read-only for OTP check)
     const account = await Model.findById(accountId);
 
     if (!account) {
@@ -245,30 +262,29 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(401).json({ error: 'Invalid OTP' });
     }
 
-    // Activate account - Set isActive to true after OTP verification
-    account.isActive = true;
-    account.resetOtp = '';
-    account.resetOtpExpireAt = 0;
+    // Activate account - update only these fields (avoids full-doc save)
+    const updated = await Model.findByIdAndUpdate(
+      accountId,
+      { $set: { isActive: true, resetOtp: '', resetOtpExpireAt: null } },
+      { new: true, runValidators: true }
+    );
 
-    console.log(`🔄 Saving account ${account.email} with _id: ${account._id}`);
-    const savedAccount = await account.save();
-    console.log(`✅ Account saved. Verifying...`);
+    console.log(`✅ Account activated for ${updated.email} - isActive: true`);
 
-    // Verify the save worked by re-fetching
-    const verifyAccount = await Model.findById(accountId);
-    console.log(`🔍 Verification - Found account: ${verifyAccount ? verifyAccount.email : 'NOT FOUND'}`);
-    console.log(`🔍 Verification - isActive: ${verifyAccount ? verifyAccount.isActive : 'N/A'}`);
-
-    console.log(`✅ Account activated for ${account.email} - isActive: true`);
+    // Diagnostic: log user count after activation
+    if (accountType === 'user') {
+      const userCount = await Model.countDocuments();
+      console.log(`📊 [Activation] User collection count after verify-otp: ${userCount}`);
+    }
 
     res.json({
       success: true,
       message: 'Account activated successfully!',
       account: {
-        email: account.email,
-        fullName: account.fullName || `${account.firstName} ${account.lastName}`,
-        role: account.role || 'user',
-        isActive: account.isActive
+        email: updated.email,
+        fullName: updated.fullName || `${updated.firstName} ${updated.lastName}`,
+        role: updated.role || 'user',
+        isActive: updated.isActive
       }
     });
 
@@ -279,7 +295,7 @@ router.post('/verify-otp', async (req, res) => {
 });
 
 // POST /api/activation/resend-otp
-// Resend OTP
+// Resend OTP (uses findByIdAndUpdate to avoid full-doc save overwrites)
 router.post('/resend-otp', async (req, res) => {
   try {
     const { accountId, accountType } = req.body;
@@ -298,22 +314,31 @@ router.post('/resend-otp', async (req, res) => {
       Model = User;
     }
 
-    // Find account
-    const account = await Model.findById(accountId);
-
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' });
+    if (accountType === 'user') {
+      console.log(`[Activation] resend-otp called for user accountId: ${accountId}`);
+      const countBefore = await Model.countDocuments();
+      console.log(`[Activation] User count before resend-otp: ${countBefore}`);
     }
 
     // Generate new OTP
     const otp = generateOTP();
     const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes (timestamp)
 
-    // Store OTP
-    account.resetOtp = otp;
-    account.resetOtpExpireAt = otpExpiry;
+    // Update only OTP fields (avoids full-doc save that could overwrite other fields)
+    const account = await Model.findByIdAndUpdate(
+      accountId,
+      { $set: { resetOtp: otp, resetOtpExpireAt: new Date(otpExpiry) } },
+      { new: true, runValidators: true }
+    );
 
-    await account.save();
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    if (accountType === 'user') {
+      const countAfter = await Model.countDocuments();
+      console.log(`[Activation] User count after resend-otp: ${countAfter}`);
+    }
 
     // Send OTP via email
     const { sendActivationOTP } = await import('../services/emailService.js');

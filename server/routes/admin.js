@@ -560,17 +560,32 @@ router.get('/user-concerns/:id', async (req, res) => {
 
 router.patch('/user-concerns/:id/status', async (req, res) => {
   try {
-    const { status, resolution } = req.body;
+    const { status, resolution, adminName } = req.body;
     const { id } = req.params;
+
+    // Require resolution when resolving
+    if (status === 'resolved' && (!resolution || !resolution.trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'A resolution message is required when resolving a concern'
+      });
+    }
 
     // Build update object
     const updateData = { status, updatedAt: new Date() };
 
     // If resolving, add resolution details
     if (status === 'resolved') {
-      updateData.resolution = resolution || 'Your concern has been resolved.';
+      updateData.resolution = resolution;
+      updateData.adminResponse = resolution;
       updateData.resolvedDate = new Date();
-      updateData.resolvedBy = req.adminId || null;
+      updateData.resolvedBy = adminName || req.adminId || 'Admin';
+      updateData.respondedDate = new Date();
+    }
+
+    // If marking as in_progress, record the timestamp
+    if (status === 'in_progress') {
+      updateData.inProgressDate = new Date();
     }
 
     // Try to find by concernId first, then by _id
@@ -600,93 +615,34 @@ router.patch('/user-concerns/:id/status', async (req, res) => {
       changes: { status, resolution }
     });
 
-    // Send email notification when concern is resolved
+    // Send email notification when concern status changes
+    if (status === 'in_progress' && concern.userEmail) {
+      try {
+        const { sendConcernInProgressEmail } = await import('../services/emailService.js');
+
+        await sendConcernInProgressEmail(concern.userEmail, concern.userName || 'Valued User', {
+          concernId: concern.concernId,
+          subject: concern.subject || concern.selectedConcerns?.join(', ') || 'Your Concern',
+          reportTo: concern.reportTo || 'NUCash Support'
+        });
+
+        console.log(`✉️ In-progress notification email sent to ${concern.userEmail}`);
+      } catch (emailError) {
+        console.error('Failed to send in-progress email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
     if (status === 'resolved' && concern.userEmail) {
       try {
-        const { sendEmail } = await import('../services/emailService.js');
+        const { sendConcernResolvedEmail } = await import('../services/emailService.js');
 
-        const resolutionMessage = resolution || 'Your concern has been resolved by our team.';
-        const reportedTo = concern.reportTo || 'NUCash Support';
-
-        await sendEmail({
-          to: concern.userEmail,
-          subject: `Your Concern Has Been Resolved - ${concern.concernId}`,
-          html: `
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;">
-              <div style="max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1E2347 0%, #0f1227 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
-                <!-- Header -->
-                <div style="background: linear-gradient(135deg, rgba(255,212,28,0.2) 0%, rgba(255,212,28,0.1) 100%); padding: 30px; text-align: center; border-bottom: 3px solid #FFD41C;">
-                  <div style="width: 70px; height: 70px; background: #FFD41C; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-                    <span style="font-size: 36px;">✅</span>
-                  </div>
-                  <h1 style="color: #FFD41C; margin: 0; font-size: 24px;">Concern Resolved</h1>
-                  <p style="color: rgba(251,251,251,0.7); margin: 8px 0 0 0; font-size: 14px;">${reportedTo}</p>
-                </div>
-
-                <!-- Body -->
-                <div style="padding: 30px;">
-                  <p style="color: rgba(251,251,251,0.9); font-size: 16px; margin: 0 0 20px 0;">
-                    Hi <strong style="color: #FFD41C;">${concern.userName || 'Valued User'}</strong>,
-                  </p>
-
-                  <p style="color: rgba(251,251,251,0.8); font-size: 15px; line-height: 1.6; margin: 0 0 25px 0;">
-                    Great news! Your concern has been reviewed and resolved by our team.
-                  </p>
-
-                  <!-- Concern Details -->
-                  <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,212,28,0.2); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
-                    <h3 style="color: #FFD41C; margin: 0 0 15px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Concern Details</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                      <tr>
-                        <td style="color: rgba(251,251,251,0.6); font-size: 13px; padding: 8px 0;">Reference ID:</td>
-                        <td style="color: rgba(251,251,251,0.9); font-size: 13px; padding: 8px 0; font-family: monospace; font-weight: bold;">${concern.concernId}</td>
-                      </tr>
-                      <tr>
-                        <td style="color: rgba(251,251,251,0.6); font-size: 13px; padding: 8px 0;">Subject:</td>
-                        <td style="color: rgba(251,251,251,0.9); font-size: 13px; padding: 8px 0;">${concern.subject || concern.selectedConcerns?.join(', ') || 'General Concern'}</td>
-                      </tr>
-                      <tr>
-                        <td style="color: rgba(251,251,251,0.6); font-size: 13px; padding: 8px 0;">Submitted:</td>
-                        <td style="color: rgba(251,251,251,0.9); font-size: 13px; padding: 8px 0;">${new Date(concern.submittedAt).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
-                      </tr>
-                      <tr>
-                        <td style="color: rgba(251,251,251,0.6); font-size: 13px; padding: 8px 0;">Status:</td>
-                        <td style="padding: 8px 0;">
-                          <span style="background: rgba(34,197,94,0.2); color: #22C55E; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase;">✓ Resolved</span>
-                        </td>
-                      </tr>
-                    </table>
-                  </div>
-
-                  <!-- Resolution Message -->
-                  <div style="background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-left: 4px solid #22C55E; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
-                    <h3 style="color: #22C55E; margin: 0 0 12px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Resolution</h3>
-                    <p style="color: rgba(251,251,251,0.9); font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-line;">${resolutionMessage}</p>
-                  </div>
-
-                  <p style="color: rgba(251,251,251,0.7); font-size: 14px; line-height: 1.6; margin: 0;">
-                    If you have any further questions or need additional assistance, please don't hesitate to submit a new concern through the NUCash app.
-                  </p>
-                </div>
-
-                <!-- Footer -->
-                <div style="background: rgba(0,0,0,0.2); padding: 20px; text-align: center; border-top: 1px solid rgba(255,212,28,0.2);">
-                  <p style="color: rgba(251,251,251,0.5); font-size: 12px; margin: 0;">
-                    Thank you for using NUCash!<br>
-                    National University - Laguna Campus
-                  </p>
-                </div>
-              </div>
-            </body>
-            </html>
-          `,
-          text: `Hi ${concern.userName || 'User'},\n\nYour concern (${concern.concernId}) has been resolved.\n\nResolution: ${resolutionMessage}\n\nThank you for using NUCash!`
+        await sendConcernResolvedEmail(concern.userEmail, concern.userName || 'Valued User', {
+          concernId: concern.concernId,
+          subject: concern.subject || concern.selectedConcerns?.join(', ') || 'Your Concern',
+          reportTo: concern.reportTo || 'NUCash Support',
+          adminReply: resolution,
+          resolvedBy: adminName || 'Support Team'
         });
 
         console.log(`✉️ Resolution email sent to ${concern.userEmail}`);

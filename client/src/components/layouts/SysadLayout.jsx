@@ -1,28 +1,24 @@
-// src/components/layouts/UserLayout.jsx
-// User layout matching Motorpool design patterns
+// src/components/layouts/SysadLayout.jsx
+// System Admin layout matching other admin design patterns with gold/yellow accent
 
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
-import UserHeader from './UserHeader';
+import SysadHeader from './SysadHeader';
 import Footer from './Footer';
 
-export default function UserLayout({ children }) {
+export default function SysadLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, isDarkMode } = useTheme();
-  const [userData] = useState(() => {
-    try {
-      const data = localStorage.getItem('userData');
-      if (data && data !== 'undefined' && data !== 'null') {
-        return JSON.parse(data);
-      }
-      return null;
-    } catch (e) {
-      console.error('Error parsing userData from localStorage:', e);
-      return null;
-    }
+  const [adminData] = useState(() => {
+    const data = localStorage.getItem('adminData');
+    return data ? JSON.parse(data) : null;
   });
+
+  // Gold/Yellow accent (matching NU branding)
+  const accentColor = '#FFD41C';
+  const accentColorDark = '#FFC700';
 
   const handleLogout = () => {
     localStorage.clear();
@@ -30,26 +26,28 @@ export default function UserLayout({ children }) {
   };
 
   const handleOpenProfile = () => {
-    navigate('/user/profile');
+    navigate('/admin/sysad/profile');
   };
 
-  // User dashboard tabs
-  const userTabs = [
-    { path: '/user/dashboard', icon: '🏠', label: 'Home' },
-    { path: '/user/history', icon: '📜', label: 'History' },
-    { path: '/user/concerns', icon: '📋', label: 'My Concerns' },
+  // Main tabs for System Admin
+  const mainTabs = [
+    { path: '/admin/sysad/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/admin/sysad/users', icon: '👥', label: 'Manage Users' },
+    { path: '/admin/sysad/transfer-card', icon: '💳', label: 'Transfer Card' },
   ];
 
-  // System tabs - Only FAQs (removed Settings)
+  // System tabs
   const systemTabs = [
-    { path: '/faq', icon: '❓', label: 'FAQs' },
+    { path: '/admin/sysad/logs', icon: '📋', label: 'Logs' },
+    { path: '/admin/sysad/concerns', icon: '💬', label: 'Concerns' },
+    { path: '/admin/sysad/config', icon: '⚙️', label: 'Settings' },
   ];
 
   return (
     <div style={{ background: theme.bg.primary }} className="min-h-screen flex flex-col">
       {/* Header */}
-      <UserHeader
-        userData={userData}
+      <SysadHeader
+        adminData={adminData}
         onLogout={handleLogout}
         onOpenProfile={handleOpenProfile}
       />
@@ -62,39 +60,39 @@ export default function UserLayout({ children }) {
         style={{
           background: theme.bg.secondary,
           borderColor: theme.border.primary,
-          boxShadow: isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(59, 130, 246, 0.08)'
+          boxShadow: isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(255, 212, 28, 0.08)'
         }}
-        className="mx-3 sm:mx-4 md:mx-8 rounded-lg px-2 sm:px-4 md:px-6 py-2 sm:py-3 border backdrop-blur-sm transition-all duration-300"
+        className="mx-8 rounded-lg px-6 py-3 border backdrop-blur-sm transition-all duration-300"
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = theme.border.hover;
-          e.currentTarget.style.boxShadow = isDarkMode ? '0 8px 30px rgba(0, 0, 0, 0.4)' : '0 8px 30px rgba(59, 130, 246, 0.15)';
+          e.currentTarget.style.boxShadow = isDarkMode ? '0 8px 30px rgba(0, 0, 0, 0.4)' : '0 8px 30px rgba(255, 212, 28, 0.15)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.borderColor = theme.border.primary;
-          e.currentTarget.style.boxShadow = isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(59, 130, 246, 0.08)';
+          e.currentTarget.style.boxShadow = isDarkMode ? '0 4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(255, 212, 28, 0.08)';
         }}
       >
-        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1 sm:gap-2">
-          {/* User Tabs */}
-          {userTabs.map((tab) => {
+        <div className="flex items-center gap-2">
+          {/* Main Tabs */}
+          {mainTabs.map((tab) => {
             const isActive = location.pathname === tab.path;
             return (
               <button
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
                 style={{
-                  background: isActive ? theme.accent.primary : 'transparent',
-                  color: isActive ? theme.accent.secondary : theme.text.secondary
+                  background: isActive ? (isDarkMode ? accentColor : accentColorDark) : 'transparent',
+                  color: isActive ? '#181D40' : theme.text.secondary
                 }}
                 className={`
-                  flex items-center gap-1 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-md font-semibold text-xs sm:text-sm
+                  flex items-center gap-2 px-5 py-2.5 rounded-md font-semibold text-sm
                   transition-all duration-300 ease-out
                   ${isActive ? 'shadow-lg scale-105' : 'hover:scale-102 hover:shadow-md'}
                 `}
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    e.currentTarget.style.background = isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)';
-                    e.currentTarget.style.color = theme.accent.primary;
+                    e.currentTarget.style.background = 'rgba(255,212,28,0.15)';
+                    e.currentTarget.style.color = accentColor;
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -104,14 +102,14 @@ export default function UserLayout({ children }) {
                   }
                 }}
               >
-                <span className={`text-sm sm:text-base transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}>{tab.icon}</span>
-                <span className="hidden xs:inline sm:inline">{tab.label}</span>
+                <span className={`text-base transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}>{tab.icon}</span>
+                <span>{tab.label}</span>
               </button>
             );
           })}
 
-          {/* Clearer Divider - Hidden on very small screens */}
-          <div className="hidden sm:block h-10 w-[2px] bg-gradient-to-b from-transparent via-[rgba(255,212,28,0.4)] to-transparent mx-2 md:mx-4" />
+          {/* Divider */}
+          <div className="h-10 w-[2px] bg-gradient-to-b from-transparent via-[rgba(255,212,28,0.4)] to-transparent mx-4" />
 
           {/* System Tabs */}
           {systemTabs.map((tab) => {
@@ -121,18 +119,18 @@ export default function UserLayout({ children }) {
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
                 style={{
-                  background: isActive ? theme.accent.primary : 'transparent',
-                  color: isActive ? theme.accent.secondary : theme.text.tertiary
+                  background: isActive ? (isDarkMode ? accentColor : accentColorDark) : 'transparent',
+                  color: isActive ? '#181D40' : theme.text.tertiary
                 }}
                 className={`
-                  flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-md font-semibold text-xs
+                  flex items-center gap-2 px-4 py-2.5 rounded-md font-semibold text-xs
                   transition-all duration-300 ease-out
                   ${isActive ? 'shadow-lg scale-105' : 'hover:scale-102 hover:shadow-md'}
                 `}
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    e.currentTarget.style.background = isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)';
-                    e.currentTarget.style.color = theme.accent.primary;
+                    e.currentTarget.style.background = 'rgba(255,212,28,0.15)';
+                    e.currentTarget.style.color = accentColor;
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -143,7 +141,7 @@ export default function UserLayout({ children }) {
                 }}
               >
                 <span className={`text-sm transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}>{tab.icon}</span>
-                <span className="hidden xs:inline sm:inline">{tab.label}</span>
+                <span>{tab.label}</span>
               </button>
             );
           })}
@@ -151,7 +149,7 @@ export default function UserLayout({ children }) {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 p-3 sm:p-4 md:p-8 overflow-auto animate-fadeIn">
+      <main className="flex-1 p-8 overflow-auto animate-fadeIn">
         {children}
       </main>
 

@@ -1,11 +1,12 @@
 // src/pages/admin/Accounting/AccountingHome.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../../context/ThemeContext';
 import api from '../../../utils/api';
-import { toast } from 'react-toastify';
 
 export default function AccountingHome() {
-  const { theme } = useTheme();
+  const { theme, isDarkMode } = useTheme();
+  const navigate = useNavigate();
   const [analytics, setAnalytics] = useState({
     todayCashIn: 0,
     todayCashOut: 0,
@@ -50,16 +51,39 @@ export default function AccountingHome() {
     };
   }, [dateRange]);
 
-  const handleExportReport = async (type) => {
-    try {
-      toast.info(`Exporting ${type} report...`);
-      // Export functionality would be implemented here
-    } catch (error) {
-      toast.error('Failed to export');
-    }
-  };
-
   const netFlow = analytics.todayCashIn - analytics.todayCashOut;
+
+  // Quick navigation items
+  const quickNavItems = [
+    {
+      path: '/admin/accounting/transactions',
+      icon: '📋',
+      label: 'Transactions',
+      description: 'View all cash-in and transaction history',
+      color: '#3B82F6'
+    },
+    {
+      path: '/admin/accounting/merchants',
+      icon: '🏪',
+      label: 'Merchants',
+      description: 'Browse merchant accounts and details',
+      color: '#F59E0B'
+    },
+    {
+      path: '/admin/accounting/logs',
+      icon: '📊',
+      label: 'Activity Logs',
+      description: 'View system activity and audit trail',
+      color: '#A855F7'
+    },
+    {
+      path: '/admin/accounting/config',
+      icon: '⚙️',
+      label: 'Settings',
+      description: 'Configure accounting settings and exports',
+      color: '#10B981'
+    }
+  ];
 
   if (loading) {
     return (
@@ -119,27 +143,51 @@ export default function AccountingHome() {
         <StatCard icon="🏦" label="SYSTEM BALANCE" value={`₱${analytics.totalBalance.toLocaleString()}`} subtitle="in circulation" color="#06B6D4" theme={theme} />
       </div>
 
-      {/* Export Reports */}
+      {/* Quick Navigation */}
       <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="p-6 rounded-2xl border">
         <h3 style={{ color: theme.text.primary }} className="text-lg font-bold mb-4 flex items-center gap-2">
-          <span>📥</span> Export Reports
+          <span>🚀</span> Quick Navigation
         </h3>
-        <div className="flex flex-wrap gap-3">
-          {[
-            { type: 'daily', label: 'Daily Report', icon: '📊' },
-            { type: 'weekly', label: 'Weekly Summary', icon: '📈' },
-            { type: 'monthly', label: 'Monthly Report', icon: '📅' },
-            { type: 'transactions', label: 'All Transactions', icon: '📋' },
-            { type: 'merchants', label: 'Merchant Report', icon: '🏪' },
-            { type: 'users', label: 'User Report', icon: '👥' }
-          ].map(({ type, label, icon }) => (
+        <div className="grid grid-cols-4 gap-4">
+          {quickNavItems.map((item) => (
             <button
-              key={type}
-              onClick={() => handleExportReport(type)}
-              style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
-              className="px-4 py-3 rounded-xl font-semibold text-sm border hover:opacity-80 transition flex items-center gap-2"
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              style={{
+                background: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+                borderColor: theme.border.primary
+              }}
+              className="p-5 rounded-2xl border text-left hover:scale-[1.02] transition-all duration-200 group"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = item.color;
+                e.currentTarget.style.boxShadow = `0 8px 20px ${item.color}20`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = theme.border.primary;
+                e.currentTarget.style.boxShadow = 'none';
+              }}
             >
-              <span>{icon}</span> {label}
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>{item.icon}</div>
+              <div style={{ color: theme.text.primary, fontWeight: 700, fontSize: '15px', marginBottom: '6px' }}>
+                {item.label}
+              </div>
+              <div style={{ color: theme.text.secondary, fontSize: '12px', lineHeight: 1.4 }}>
+                {item.description}
+              </div>
+              <div
+                style={{
+                  marginTop: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: item.color,
+                  fontSize: '12px',
+                  fontWeight: 600
+                }}
+              >
+                <span>Go to {item.label}</span>
+                <span style={{ transition: 'transform 0.2s' }} className="group-hover:translate-x-1">→</span>
+              </div>
             </button>
           ))}
         </div>

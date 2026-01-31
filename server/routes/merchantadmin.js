@@ -144,6 +144,7 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
     console.log('📝 Destructured fields:', { businessName, firstName, lastName, email, password });
 
     const { default: Merchant } = await import('../models/Merchant.js');
+    const { logAdminAction } = await import('../utils/logger.js');
 
     // Validate required fields
     if (!businessName || !firstName || !lastName || !email || !password) {
@@ -159,6 +160,11 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
       });
     }
 
+    // Validate PIN format (6 digits)
+    if (!/^\d{6}$/.test(password)) {
+      return res.status(400).json({ error: 'PIN must be exactly 6 numeric digits' });
+    }
+
     // Check if email already exists
     const existing = await Merchant.findOne({ email: email.toLowerCase().trim() });
 
@@ -166,9 +172,16 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
       return res.status(409).json({ error: 'Email already exists' });
     }
 
-    // Generate merchantId
-    const merchantCount = await Merchant.countDocuments();
-    const merchantId = `M${String(merchantCount + 1).padStart(4, '0')}`;
+    // Generate merchantId - find the highest existing ID and increment
+    const lastMerchant = await Merchant.findOne().sort({ merchantId: -1 });
+    let nextNum = 1;
+    if (lastMerchant && lastMerchant.merchantId) {
+      const match = lastMerchant.merchantId.match(/M(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1]) + 1;
+      }
+    }
+    const merchantId = `M${String(nextNum).padStart(4, '0')}`;
 
     console.log('✅ Creating merchant with data:', {
       merchantId,
@@ -176,7 +189,7 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
       firstName,
       lastName,
       email: email.toLowerCase().trim(),
-      pin: password,
+      pin: '******',
       role: 'merchant'
     });
 
@@ -188,10 +201,21 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
       lastName,
       email: email.toLowerCase().trim(),
       pin: password,
-      role: 'merchant'
+      role: 'merchant',
+      isActive: false // Needs activation
     });
 
     await merchant.save();
+
+    // Log admin action
+    await logAdminAction({
+      action: 'Merchant Created',
+      description: `created new merchant: ${businessName} (${merchantId})`,
+      adminId: req.merchantId || 'merchant-admin',
+      targetEntity: 'merchant',
+      targetId: merchantId,
+      changes: { businessName, firstName, lastName, email }
+    });
 
     res.status(201).json({
       message: 'Merchant created successfully',
@@ -201,12 +225,13 @@ router.post('/merchants', verifyMerchantToken, async (req, res) => {
         businessName: merchant.businessName,
         firstName: merchant.firstName,
         lastName: merchant.lastName,
-        email: merchant.email
+        email: merchant.email,
+        isActive: merchant.isActive
       }
     });
   } catch (error) {
     console.error('Create merchant error:', error);
-    res.status(500).json({ error: 'Failed to create merchant' });
+    res.status(500).json({ error: error.message || 'Failed to create merchant' });
   }
 });
 
@@ -488,6 +513,205 @@ router.delete('/phones/:id', verifyMerchantToken, async (req, res) => {
   } catch (error) {
     console.error('Delete phone error:', error);
     res.status(500).json({ error: 'Failed to delete phone' });
+  }
+});
+
+// ============================================================
+// CONCERNS ENDPOINTS
+// ============================================================
+
+// GET /merchant/concerns - Get concerns/feedback for merchants
+router.get('/concerns', verifyMerchantToken, async (req, res) => {
+  try {
+    const { default: UserConcern } = await import('../models/UserConcern.js');
+    const { status, type, search, page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build filter - get concerns where reportTo contains 'merchants' or specific merchant name
+    const filter = {
+      $or: [
+        { reportTo: { $regex: /merchants/i } },
+        { reportTo: { $regex: /merchant/i } }
+      ]
+    };
+
+    // Exclude motorpool-related
+    filter.reportTo = { $not: /motorpool|shuttle/i, ...filter.$or[0].reportTo };
+    delete filter.$or;
+    filter.$or = [
+      { reportTo: { $regex: /merchants/i, $not: /motorpool|shuttle/i } },
+      { reportTo: { $regex: /^(?!.*(motorpool|shuttle)).*$/i } }
+    ];
+
+    // Simpler filter approach
+    filter.$or = [
+      { reportTo: 'merchants' },
+      { reportTo: { $regex: /^(?!.*(motorpool|shuttle|treasury|sysad|nucash)).*$/i, $ne: null } }
+    ];
+
+    // Status filter
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    // Type filter (assistance or feedback)
+    if (type && type !== 'all') {
+      filter.submissionType = type;
+    }
+
+    // Search filter
+    if (search) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { concernId: { $regex: search, $options: 'i' } },
+          { userName: { $regex: search, $options: 'i' } },
+          { userEmail: { $regex: search, $options: 'i' } },
+          { subject: { $regex: search, $options: 'i' } },
+          { feedbackText: { $regex: search, $options: 'i' } },
+          { reportTo: { $regex: search, $options: 'i' } }
+        ]
+      });
+    }
+
+    // Get concerns
+    const concerns = await UserConcern.find(filter)
+      .sort({ submittedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('userId', 'firstName lastName email schoolUId');
+
+    // Get total count
+    const total = await UserConcern.countDocuments(filter);
+
+    // Format concerns for frontend
+    const formattedConcerns = concerns.map(c => ({
+      _id: c._id,
+      concernId: c.concernId,
+      submissionType: c.submissionType,
+      reportTo: c.reportTo,
+      subject: c.subject || (c.selectedConcerns?.length > 0 ? c.selectedConcerns.join(', ') : 'No subject'),
+      message: c.feedbackText || '',
+      status: c.status || 'pending',
+      priority: c.priority,
+      rating: c.rating,
+      user: c.userId ? {
+        firstName: c.userId.firstName,
+        lastName: c.userId.lastName,
+        email: c.userId.email,
+        schoolUId: c.userId.schoolUId
+      } : {
+        firstName: c.userName?.split(' ')[0] || 'Unknown',
+        lastName: c.userName?.split(' ').slice(1).join(' ') || '',
+        email: c.userEmail
+      },
+      createdAt: c.submittedAt || c.createdAt,
+      resolution: c.resolution,
+      adminResponse: c.adminResponse
+    }));
+
+    res.json({
+      success: true,
+      concerns: formattedConcerns,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get merchant concerns error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /merchant/concerns/:id/status - Update concern status
+router.patch('/concerns/:id/status', verifyMerchantToken, async (req, res) => {
+  try {
+    const { default: UserConcern } = await import('../models/UserConcern.js');
+    const { logAdminAction } = await import('../utils/logger.js');
+    const { sendConcernInProgressEmail, sendConcernResolvedEmail } = await import('../services/emailService.js');
+
+    const { status, reply, adminName } = req.body;
+    const concernId = req.params.id;
+
+    if (!status || !['pending', 'in_progress', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    // Require reply when resolving
+    if (status === 'resolved' && (!reply || !reply.trim())) {
+      return res.status(400).json({ error: 'A reply is required when resolving a concern' });
+    }
+
+    const concern = await UserConcern.findById(concernId).populate('userId', 'firstName lastName email');
+
+    if (!concern) {
+      return res.status(404).json({ error: 'Concern not found' });
+    }
+
+    const oldStatus = concern.status;
+    concern.status = status;
+
+    if (reply && reply.trim()) {
+      concern.adminResponse = reply.trim();
+      concern.respondedDate = new Date();
+    }
+
+    if (status === 'resolved' && !concern.resolvedDate) {
+      concern.resolvedDate = new Date();
+    }
+
+    await concern.save();
+
+    // Send email notification
+    const userEmail = concern.userId?.email || concern.userEmail;
+    const userName = concern.userId
+      ? `${concern.userId.firstName} ${concern.userId.lastName}`
+      : concern.userName || 'User';
+    const resolvedByName = adminName || 'Merchant Admin';
+
+    if (userEmail) {
+      try {
+        if (status === 'in_progress' && oldStatus !== 'in_progress') {
+          await sendConcernInProgressEmail(userEmail, userName, {
+            concernId: concern.concernId,
+            subject: concern.subject || 'Your Concern',
+            reportTo: concern.reportTo || 'Merchant Admin'
+          });
+        } else if (status === 'resolved') {
+          await sendConcernResolvedEmail(userEmail, userName, {
+            concernId: concern.concernId,
+            subject: concern.subject || 'Your Concern',
+            reportTo: concern.reportTo || 'Merchant Admin',
+            adminReply: concern.adminResponse,
+            resolvedBy: resolvedByName
+          });
+        }
+      } catch (emailError) {
+        console.error('Failed to send concern status email:', emailError);
+      }
+    }
+
+    // Log admin action
+    await logAdminAction({
+      action: 'Concern Status Updated',
+      description: `updated concern ${concern.concernId} status from ${oldStatus} to ${status}`,
+      adminId: req.merchantId || 'merchant-admin',
+      targetEntity: 'concern',
+      targetId: concern.concernId,
+      changes: { oldStatus, newStatus: status, reply: reply || null }
+    });
+
+    res.json({
+      success: true,
+      message: status === 'resolved' ? 'Concern resolved and user notified' : 'Status updated successfully',
+      concern
+    });
+  } catch (error) {
+    console.error('❌ Update concern status error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

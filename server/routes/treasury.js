@@ -6,8 +6,9 @@ const router = express.Router();
 import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
 import Merchant from '../models/Merchant.js';
+import UserConcern from '../models/UserConcern.js';
 import { logAdminAction } from '../utils/logger.js';
-import { sendTemporaryPIN } from '../services/emailService.js';
+import { sendTemporaryPIN, sendConcernInProgressEmail, sendConcernResolvedEmail } from '../services/emailService.js';
 
 // ============================================================
 // DASHBOARD ENDPOINT
@@ -247,23 +248,28 @@ router.get('/transactions', async (req, res) => {
     const total = await Transaction.countDocuments(filter);
 
     // Format transactions for frontend
-    const formattedTransactions = transactions.map(tx => ({
-      _id: tx._id,
-      transactionId: tx.transactionId,
-      transactionType: tx.transactionType,
-      amount: tx.amount,
-      status: tx.status,
-      balance: tx.balance,
-      shuttleId: tx.shuttleId,
-      merchantId: tx.merchantId,
-      schoolUId: tx.schoolUId,
-      email: tx.email,
-      userName: tx.userId ? `${tx.userId.firstName} ${tx.userId.lastName}` : 'Unknown',
-      idNumber: tx.userId ? tx.userId.schoolUId : tx.schoolUId,
-      admin: tx.adminId ? `${tx.adminId.firstName} ${tx.adminId.lastName}` : null,
-      createdAt: tx.createdAt,
-      updatedAt: tx.updatedAt
-    }));
+    const formattedTransactions = transactions.map(tx => {
+      const adminName = tx.adminId ? `${tx.adminId.firstName} ${tx.adminId.lastName}` : null;
+      return {
+        _id: tx._id,
+        transactionId: tx.transactionId,
+        transactionType: tx.transactionType,
+        amount: tx.amount,
+        status: tx.status,
+        balance: tx.balance,
+        shuttleId: tx.shuttleId,
+        merchantId: tx.merchantId,
+        schoolUId: tx.schoolUId,
+        email: tx.email,
+        userName: tx.userId ? `${tx.userId.firstName} ${tx.userId.lastName}` : 'Unknown',
+        idNumber: tx.userId ? tx.userId.schoolUId : tx.schoolUId,
+        admin: adminName,
+        adminName: adminName,
+        processedBy: adminName || (tx.transactionType === 'credit' ? 'Treasury' : null),
+        createdAt: tx.createdAt,
+        updatedAt: tx.updatedAt
+      };
+    });
 
     res.json({
       success: true,
@@ -408,7 +414,8 @@ router.get('/users/search-rfid', async (req, res) => {
         email: user.email,
         balance: user.balance,
         role: user.role,
-        isActive: user.isActive
+        isActive: user.isActive,
+        isDeactivated: user.isDeactivated || false
       }
     });
   } catch (error) {
@@ -623,10 +630,15 @@ router.post('/register', async (req, res) => {
     let emailSent = false;
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
-      emailSent = await sendTemporaryPIN(email.trim().toLowerCase(), pin, fullName, schoolUId);
-      console.log(`📧 Temporary PIN email ${emailSent ? 'sent' : 'failed'} for ${email}`);
+      // Format school ID for display (####-######)
+      const formattedSchoolId = schoolUId.length === 10
+        ? `${schoolUId.slice(0, 4)}-${schoolUId.slice(4)}`
+        : schoolUId;
+      console.log(`📧 Sending temporary PIN email to ${email}...`);
+      emailSent = await sendTemporaryPIN(email.trim().toLowerCase(), pin, fullName, formattedSchoolId);
+      console.log(`📧 Temporary PIN email ${emailSent ? 'sent successfully' : 'failed'} for ${email}`);
     } catch (emailError) {
-      console.error('Email sending failed:', emailError);
+      console.error('❌ Email sending failed:', emailError.message || emailError);
       emailSent = false;
     }
 
@@ -766,42 +778,32 @@ router.post('/users/register', async (req, res) => {
     const lastUser = await User.findOne().sort({ userId: -1 });
     const userId = lastUser ? lastUser.userId + 1 : 100000;
 
-    // Create user
+    // Check if email already exists
+    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+
+    // Create user - isActive: false until they change PIN
     const user = new User({
       userId,
       schoolUId,
       rfidUId,
-      firstName,
-      lastName,
-      middleName: middleName || '',
-      email,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      middleName: middleName ? middleName.trim() : '',
+      email: email.trim().toLowerCase(),
       pin,
       role: role || 'student',
-      balance: parseFloat(initialBalance) || 0,
-      isActive: true
+      balance: 0,
+      isActive: false, // User must change PIN to activate
+      isDeactivated: false
     });
 
     await user.save();
-
-    // If initial balance, create a transaction
-    if (initialBalance && parseFloat(initialBalance) > 0) {
-      const transactionId = await Transaction.generateTransactionId();
-
-      const transaction = new Transaction({
-        transactionId,
-        transactionType: 'credit',
-        amount: parseFloat(initialBalance),
-        status: 'Completed',
-        userId: user._id,
-        schoolUId: user.schoolUId,
-        email: user.email,
-        balance: parseFloat(initialBalance),
-        adminId: adminId || null,
-        viewFor: 'treasury'
-      });
-
-      await transaction.save();
-    }
 
     // Log admin action
     await logAdminAction({
@@ -810,12 +812,29 @@ router.post('/users/register', async (req, res) => {
       adminId: adminId || 'treasury',
       targetEntity: 'user',
       targetId: user.userId.toString(),
-      changes: req.body
+      changes: { schoolUId, rfidUId, firstName, lastName, email, role }
     });
+
+    // Send email with temporary PIN
+    let emailSent = false;
+    try {
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+      // Format school ID for display (####-######)
+      const formattedSchoolId = schoolUId.length === 10
+        ? `${schoolUId.slice(0, 4)}-${schoolUId.slice(4)}`
+        : schoolUId;
+      console.log(`📧 Sending temporary PIN email to ${email}...`);
+      emailSent = await sendTemporaryPIN(email.trim().toLowerCase(), pin, fullName, formattedSchoolId);
+      console.log(`📧 Temporary PIN email ${emailSent ? 'sent successfully' : 'failed'} for ${email}`);
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError.message || emailError);
+      emailSent = false;
+    }
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
+      emailSent,
       user: {
         userId: user.userId,
         schoolUId: user.schoolUId,
@@ -824,7 +843,8 @@ router.post('/users/register', async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         balance: user.balance,
-        role: user.role
+        role: user.role,
+        isActive: user.isActive
       }
     });
   } catch (error) {
@@ -842,7 +862,7 @@ router.post('/users/register', async (req, res) => {
 
 /**
  * GET /api/admin/treasury/merchants
- * Get paginated list of merchants
+ * Get paginated list of merchants (includes Motorpool as a merchant)
  */
 router.get('/merchants', async (req, res) => {
   try {
@@ -876,12 +896,88 @@ router.get('/merchants', async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Get total count
-    const total = await Merchant.countDocuments(filter);
+    // Get MerchantTransaction model for merchant stats
+    const { default: MerchantTransaction } = await import('../models/MerchantTransaction.js');
+    const { default: ShuttleTransaction } = await import('../models/ShuttleTransaction.js');
+
+    // Calculate metrics for each merchant
+    const merchantsWithMetrics = await Promise.all(merchants.map(async (merchant) => {
+      const merchantObj = merchant.toObject();
+
+      // Get transaction stats
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const [totalStats, todayStats] = await Promise.all([
+        MerchantTransaction.aggregate([
+          { $match: { merchantId: merchant.merchantId, status: 'completed' } },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        ]),
+        MerchantTransaction.aggregate([
+          { $match: { merchantId: merchant.merchantId, status: 'completed', timestamp: { $gte: today } } },
+          { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        ])
+      ]);
+
+      merchantObj.totalCollections = totalStats[0]?.total || 0;
+      merchantObj.totalTransactions = totalStats[0]?.count || 0;
+      merchantObj.todayCollections = todayStats[0]?.total || 0;
+      merchantObj.todayTransactions = todayStats[0]?.count || 0;
+      merchantObj.type = 'merchant';
+
+      return merchantObj;
+    }));
+
+    // Create Motorpool as a special merchant entry
+    const motorpoolSearchMatch = !search ||
+      'motorpool'.includes(search.toLowerCase()) ||
+      'shuttle'.includes(search.toLowerCase()) ||
+      'transport'.includes(search.toLowerCase()) ||
+      'nu shuttle'.includes(search.toLowerCase());
+
+    const motorpoolActiveMatch = isActive === undefined || isActive === 'true';
+
+    let allMerchants = [...merchantsWithMetrics];
+
+    // Add Motorpool if it matches search/filter
+    if (motorpoolSearchMatch && motorpoolActiveMatch) {
+      const [motorpoolTotal, motorpoolToday] = await Promise.all([
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed' } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ]),
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed', timestamp: { $gte: new Date(new Date().setHours(0,0,0,0)) } } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ])
+      ]);
+
+      const motorpoolMerchant = {
+        _id: 'motorpool',
+        merchantId: 'MOTORPOOL',
+        businessName: 'NU Shuttle Motorpool',
+        firstName: 'NU',
+        lastName: 'Motorpool',
+        email: 'motorpool@nu-laguna.edu.ph',
+        isActive: true,
+        type: 'motorpool',
+        totalCollections: motorpoolTotal[0]?.total || 0,
+        totalTransactions: motorpoolTotal[0]?.count || 0,
+        todayCollections: motorpoolToday[0]?.total || 0,
+        todayTransactions: motorpoolToday[0]?.count || 0,
+        createdAt: new Date('2024-01-01')
+      };
+
+      // Add motorpool at the beginning of the list
+      allMerchants.unshift(motorpoolMerchant);
+    }
+
+    // Get total count (including motorpool)
+    const total = await Merchant.countDocuments(filter) + (motorpoolSearchMatch && motorpoolActiveMatch ? 1 : 0);
 
     res.json({
       success: true,
-      merchants,
+      merchants: allMerchants,
       pagination: {
         total,
         page: parseInt(page),
@@ -966,6 +1062,508 @@ router.patch('/merchants/:merchantId/status', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Update merchant status error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/admin/treasury/merchants/:merchantId/details
+ * Get merchant details with metrics and recent transactions
+ */
+router.get('/merchants/:merchantId/details', async (req, res) => {
+  try {
+    const { merchantId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const thisWeek = new Date();
+    thisWeek.setDate(thisWeek.getDate() - 7);
+
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+
+    // Handle Motorpool separately
+    if (merchantId === 'MOTORPOOL') {
+      const { default: ShuttleTransaction } = await import('../models/ShuttleTransaction.js');
+
+      // Get transactions
+      const transactions = await ShuttleTransaction.find({ status: 'completed' })
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean();
+
+      const totalTransactionsCount = await ShuttleTransaction.countDocuments({ status: 'completed' });
+
+      // Get metrics
+      const [totalStats, todayStats, weekStats, monthStats] = await Promise.all([
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed' } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ]),
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed', timestamp: { $gte: today } } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ]),
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed', timestamp: { $gte: thisWeek } } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ]),
+        ShuttleTransaction.aggregate([
+          { $match: { status: 'completed', timestamp: { $gte: thisMonth } } },
+          { $group: { _id: null, total: { $sum: '$fareCharged' }, count: { $sum: 1 } } }
+        ])
+      ]);
+
+      // Format transactions to match merchant transaction structure
+      const formattedTransactions = transactions.map(tx => ({
+        _id: tx._id,
+        merchantId: 'MOTORPOOL',
+        merchantName: 'NU Shuttle',
+        businessName: 'NU Shuttle Motorpool',
+        userName: tx.userName || 'User',
+        userEmail: tx.userEmail || '',
+        amount: tx.fareCharged,
+        itemDescription: `Shuttle Ride - Route ${tx.routeId || 'N/A'}`,
+        status: tx.status,
+        paymentMethod: tx.paymentMethod || 'nfc',
+        timestamp: tx.timestamp,
+        createdAt: tx.createdAt
+      }));
+
+      return res.json({
+        success: true,
+        merchant: {
+          _id: 'motorpool',
+          merchantId: 'MOTORPOOL',
+          businessName: 'NU Shuttle Motorpool',
+          firstName: 'NU',
+          lastName: 'Motorpool',
+          email: 'motorpool@nu-laguna.edu.ph',
+          isActive: true,
+          type: 'motorpool',
+          createdAt: new Date('2024-01-01')
+        },
+        metrics: {
+          totalCollections: totalStats[0]?.total || 0,
+          totalTransactions: totalStats[0]?.count || 0,
+          todayCollections: todayStats[0]?.total || 0,
+          todayTransactions: todayStats[0]?.count || 0,
+          weekCollections: weekStats[0]?.total || 0,
+          weekTransactions: weekStats[0]?.count || 0,
+          monthCollections: monthStats[0]?.total || 0,
+          monthTransactions: monthStats[0]?.count || 0
+        },
+        transactions: formattedTransactions,
+        pagination: {
+          total: totalTransactionsCount,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(totalTransactionsCount / parseInt(limit))
+        }
+      });
+    }
+
+    // Regular merchant
+    const merchant = await Merchant.findOne({ merchantId });
+
+    if (!merchant) {
+      return res.status(404).json({
+        success: false,
+        message: 'Merchant not found'
+      });
+    }
+
+    const { default: MerchantTransaction } = await import('../models/MerchantTransaction.js');
+
+    // Get transactions
+    const transactions = await MerchantTransaction.find({
+      merchantId: merchant.merchantId,
+      status: 'completed'
+    })
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalTransactionsCount = await MerchantTransaction.countDocuments({
+      merchantId: merchant.merchantId,
+      status: 'completed'
+    });
+
+    // Get metrics
+    const [totalStats, todayStats, weekStats, monthStats] = await Promise.all([
+      MerchantTransaction.aggregate([
+        { $match: { merchantId: merchant.merchantId, status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      MerchantTransaction.aggregate([
+        { $match: { merchantId: merchant.merchantId, status: 'completed', timestamp: { $gte: today } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      MerchantTransaction.aggregate([
+        { $match: { merchantId: merchant.merchantId, status: 'completed', timestamp: { $gte: thisWeek } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      MerchantTransaction.aggregate([
+        { $match: { merchantId: merchant.merchantId, status: 'completed', timestamp: { $gte: thisMonth } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      merchant: merchant.toObject(),
+      metrics: {
+        totalCollections: totalStats[0]?.total || 0,
+        totalTransactions: totalStats[0]?.count || 0,
+        todayCollections: todayStats[0]?.total || 0,
+        todayTransactions: todayStats[0]?.count || 0,
+        weekCollections: weekStats[0]?.total || 0,
+        weekTransactions: weekStats[0]?.count || 0,
+        monthCollections: monthStats[0]?.total || 0,
+        monthTransactions: monthStats[0]?.count || 0
+      },
+      transactions,
+      pagination: {
+        total: totalTransactionsCount,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalTransactionsCount / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get merchant details error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// ============================================================
+// CONCERNS ENDPOINTS
+// ============================================================
+
+/**
+ * GET /api/admin/treasury/concerns
+ * Get concerns/feedback submitted to Treasury Office
+ */
+router.get('/concerns', async (req, res) => {
+  try {
+    const { status, search, page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build filter - get concerns where reportTo is Treasury Office or assistance type
+    const filter = {
+      $or: [
+        { reportTo: { $regex: /treasury/i } },
+        { reportTo: { $regex: /cash/i } },
+        { submissionType: 'assistance', selectedConcerns: { $elemMatch: { $regex: /balance|cash|payment|transaction/i } } }
+      ]
+    };
+
+    // Status filter
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    // Search filter
+    if (search) {
+      filter.$and = [
+        {
+          $or: [
+            { concernId: { $regex: search, $options: 'i' } },
+            { userName: { $regex: search, $options: 'i' } },
+            { userEmail: { $regex: search, $options: 'i' } },
+            { subject: { $regex: search, $options: 'i' } },
+            { feedbackText: { $regex: search, $options: 'i' } }
+          ]
+        }
+      ];
+    }
+
+    // Get concerns
+    const concerns = await UserConcern.find(filter)
+      .sort({ submittedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('userId', 'firstName lastName email schoolUId');
+
+    // Get total count
+    const total = await UserConcern.countDocuments(filter);
+
+    // Format concerns for frontend
+    const formattedConcerns = concerns.map(c => ({
+      _id: c._id,
+      concernId: c.concernId,
+      submissionType: c.submissionType,
+      subject: c.subject || (c.selectedConcerns && c.selectedConcerns.length > 0 ? c.selectedConcerns.join(', ') : 'No subject'),
+      message: c.feedbackText || (c.selectedConcerns && c.selectedConcerns.length > 0 ? `Concerns: ${c.selectedConcerns.join(', ')}` : ''),
+      status: c.status || 'pending',
+      priority: c.priority,
+      user: c.userId ? {
+        firstName: c.userId.firstName,
+        lastName: c.userId.lastName,
+        email: c.userId.email,
+        schoolUId: c.userId.schoolUId
+      } : {
+        firstName: c.userName?.split(' ')[0] || 'Unknown',
+        lastName: c.userName?.split(' ').slice(1).join(' ') || '',
+        email: c.userEmail
+      },
+      createdAt: c.submittedAt || c.createdAt,
+      resolution: c.resolution,
+      adminResponse: c.adminResponse
+    }));
+
+    res.json({
+      success: true,
+      concerns: formattedConcerns,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get treasury concerns error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/treasury/concerns/:id/reply
+ * Reply to a concern
+ */
+router.post('/concerns/:id/reply', async (req, res) => {
+  try {
+    const { reply } = req.body;
+    const concernId = req.params.id;
+
+    if (!reply || !reply.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reply text is required'
+      });
+    }
+
+    const concern = await UserConcern.findById(concernId);
+
+    if (!concern) {
+      return res.status(404).json({
+        success: false,
+        message: 'Concern not found'
+      });
+    }
+
+    // Update concern with reply
+    concern.adminResponse = reply.trim();
+    concern.respondedDate = new Date();
+    if (concern.status === 'pending') {
+      concern.status = 'in_progress';
+    }
+
+    await concern.save();
+
+    // Log admin action
+    await logAdminAction({
+      action: 'Concern Reply Sent',
+      description: `replied to concern ${concern.concernId}`,
+      adminId: req.adminId || 'treasury',
+      targetEntity: 'concern',
+      targetId: concern.concernId,
+      changes: { reply }
+    });
+
+    res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      concern
+    });
+  } catch (error) {
+    console.error('❌ Reply to concern error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * PATCH /api/admin/treasury/concerns/:id/status
+ * Update concern status - requires reply when resolving
+ */
+router.patch('/concerns/:id/status', async (req, res) => {
+  try {
+    const { status, reply, adminName } = req.body;
+    const concernId = req.params.id;
+
+    if (!status || !['pending', 'in_progress', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status'
+      });
+    }
+
+    // Require reply when resolving
+    if (status === 'resolved' && (!reply || !reply.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reply is required when resolving a concern'
+      });
+    }
+
+    const concern = await UserConcern.findById(concernId).populate('userId', 'firstName lastName email');
+
+    if (!concern) {
+      return res.status(404).json({
+        success: false,
+        message: 'Concern not found'
+      });
+    }
+
+    const oldStatus = concern.status;
+    concern.status = status;
+
+    // Add reply if provided
+    if (reply && reply.trim()) {
+      concern.adminResponse = reply.trim();
+      concern.respondedDate = new Date();
+    }
+
+    if (status === 'resolved' && !concern.resolvedDate) {
+      concern.resolvedDate = new Date();
+      // resolvedBy in schema is ObjectId ref to Admin; we only have display name, so leave null
+    }
+
+    await concern.save();
+
+    // Send email notification based on status change
+    const userEmail = concern.userId?.email || concern.userEmail;
+    const userName = concern.userId
+      ? `${concern.userId.firstName} ${concern.userId.lastName}`
+      : concern.userName || 'User';
+    const resolvedByName = adminName || 'Treasury Office';
+
+    if (userEmail) {
+      try {
+        if (status === 'in_progress' && oldStatus !== 'in_progress') {
+          await sendConcernInProgressEmail(userEmail, userName, {
+            concernId: concern.concernId,
+            subject: concern.subject || 'Your Concern',
+            reportTo: concern.reportTo || 'Treasury Office'
+          });
+        } else if (status === 'resolved') {
+          await sendConcernResolvedEmail(userEmail, userName, {
+            concernId: concern.concernId,
+            subject: concern.subject || 'Your Concern',
+            reportTo: concern.reportTo || 'Treasury Office',
+            adminReply: concern.adminResponse,
+            resolvedBy: resolvedByName
+          });
+        }
+      } catch (emailError) {
+        console.error('Failed to send concern status email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    // Log admin action
+    await logAdminAction({
+      action: 'Concern Status Updated',
+      description: `updated concern ${concern.concernId} status from ${oldStatus} to ${status}`,
+      adminId: req.adminId || 'treasury',
+      targetEntity: 'concern',
+      targetId: concern.concernId,
+      changes: { oldStatus, newStatus: status, reply: reply || null }
+    });
+
+    res.json({
+      success: true,
+      message: status === 'resolved'
+        ? 'Concern resolved and user notified via email'
+        : 'Status updated successfully',
+      concern,
+      emailSent: !!userEmail
+    });
+  } catch (error) {
+    console.error('❌ Update concern status error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// ============================================================
+// CONFIG ENDPOINTS
+// ============================================================
+
+/**
+ * GET /api/admin/treasury/config
+ * Get treasury configuration settings
+ */
+router.get('/config', async (req, res) => {
+  try {
+    // Return default config for now (can be expanded to use a Config model later)
+    res.json({
+      success: true,
+      config: {
+        minCashIn: 10,
+        maxCashIn: 10000,
+        dailyCashInLimit: 50000,
+        autoLogoutMinutes: 30
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get treasury config error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/treasury/config
+ * Update treasury configuration settings
+ */
+router.put('/config', async (req, res) => {
+  try {
+    const { minCashIn, maxCashIn, dailyCashInLimit, autoLogoutMinutes } = req.body;
+
+    // For now, just acknowledge the config update
+    // In a real implementation, this would save to a Config model
+
+    // Log admin action
+    await logAdminAction({
+      action: 'Treasury Config Updated',
+      description: 'updated treasury configuration settings',
+      adminId: req.adminId || 'treasury',
+      targetEntity: 'config',
+      targetId: 'treasury-config',
+      changes: { minCashIn, maxCashIn, dailyCashInLimit, autoLogoutMinutes }
+    });
+
+    res.json({
+      success: true,
+      message: 'Configuration updated successfully',
+      config: { minCashIn, maxCashIn, dailyCashInLimit, autoLogoutMinutes }
+    });
+  } catch (error) {
+    console.error('❌ Update treasury config error:', error);
     res.status(500).json({
       success: false,
       message: error.message

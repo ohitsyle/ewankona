@@ -492,7 +492,7 @@
                 </button>
 
                 <div class="resend-link">
-                    Didn't receive the code? <button onclick="resendOTP()">Resend OTP</button>
+                    Didn't receive the code? <button id="resend-otp-btn" onclick="resendOTP()">Resend OTP</button>
                 </div>
             </div>
 
@@ -686,6 +686,7 @@
                 if (response.ok) {
                     document.getElementById('user-email').textContent = data.email;
                     showAlert('success', 'PIN updated! OTP sent to your email.');
+                    startResendCooldown();
                     setTimeout(() => goToStep(3), 1500);
                 } else {
                     showAlert('error', data.error || 'Failed to set new PIN');
@@ -737,7 +738,29 @@
             }
         }
 
+        let resendCooldownTimer = null;
+
+        function startResendCooldown(seconds = 60) {
+            const btn = document.getElementById('resend-otp-btn');
+            if (!btn) return;
+            if (resendCooldownTimer) clearInterval(resendCooldownTimer);
+            btn.disabled = true;
+            let left = seconds;
+            btn.textContent = 'Resend OTP in ' + left + 's';
+            resendCooldownTimer = setInterval(() => {
+                left--;
+                btn.textContent = left > 0 ? 'Resend OTP in ' + left + 's' : 'Resend OTP';
+                if (left <= 0) {
+                    clearInterval(resendCooldownTimer);
+                    resendCooldownTimer = null;
+                    btn.disabled = false;
+                }
+            }, 1000);
+        }
+
         async function resendOTP() {
+            const btn = document.getElementById('resend-otp-btn');
+            if (btn && btn.disabled) return;
             try {
                 const response = await fetch('/api/activation/resend-otp', {
                     method: 'POST',
@@ -749,6 +772,7 @@
 
                 if (response.ok) {
                     showAlert('success', 'New OTP sent to your email!');
+                    startResendCooldown();
                 } else {
                     showAlert('error', data.error || 'Failed to resend OTP');
                 }

@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
 import nodemailer from 'nodemailer';
+import { logLogin, logLogout, logAdminAction } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -15,6 +16,32 @@ const JWT_SECRET = process.env.JWT_SECRET || 'nucash-admin-secret-key-2024';
 
 // OTP storage (in production, use Redis or database)
 const otpStore = new Map();
+
+// ============================================================================
+// Middleware: Authenticate Admin JWT Token
+// ============================================================================
+function authenticateAdmin(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        error: 'No token provided'
+      });
+    }
+
+    const token = authHeader.substring(7);
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.admin = decoded;
+    next();
+  } catch (error) {
+    console.error('❌ Token verification error:', error);
+    return res.status(401).json({
+      error: 'Invalid or expired token'
+    });
+  }
+}
 
 // Email transporter configuration
 const transporter = nodemailer.createTransport({
@@ -90,6 +117,15 @@ router.post('/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    // Log the login event
+    await logLogin({
+      userId: admin.adminId,
+      userName: `${admin.firstName} ${admin.lastName}`,
+      userType: `Admin (${admin.role})`,
+      ipAddress: req.ip || req.connection?.remoteAddress,
+      deviceInfo: req.headers['user-agent']
+    });
+
     // Send response
     res.json({
       message: 'Login successful',
@@ -114,6 +150,35 @@ router.post('/login', async (req, res) => {
     console.error('❌ Admin login error:', error);
     res.status(500).json({
       error: 'Login failed. Please try again.'
+    });
+  }
+});
+
+// ============================================================================
+// POST /api/admin-auth/logout
+// Admin logout - logs the event
+// ============================================================================
+router.post('/logout', authenticateAdmin, async (req, res) => {
+  try {
+    const admin = req.admin;
+
+    // Log the logout event
+    await logLogout({
+      userId: admin.adminId,
+      userName: admin.email,
+      userType: `Admin (${admin.role})`,
+      sessionDuration: req.body.sessionDuration || null
+    });
+
+    console.log(`👋 Admin logout: ${admin.email}`);
+
+    res.json({
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    console.error('❌ Logout error:', error);
+    res.status(500).json({
+      error: 'Logout failed'
     });
   }
 });
@@ -563,32 +628,6 @@ router.post('/change-password', authenticateAdmin, async (req, res) => {
     });
   }
 });
-
-// ============================================================================
-// Middleware: Authenticate Admin JWT Token
-// ============================================================================
-function authenticateAdmin(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        error: 'No token provided'
-      });
-    }
-
-    const token = authHeader.substring(7);
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.admin = decoded;
-    next();
-  } catch (error) {
-    console.error('❌ Token verification error:', error);
-    return res.status(401).json({
-      error: 'Invalid or expired token'
-    });
-  }
-}
 
 // ============================================================================
 // GET /api/admin/auth/me

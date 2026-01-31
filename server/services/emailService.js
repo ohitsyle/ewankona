@@ -15,6 +15,18 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Verify transporter on startup
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Email transporter verification failed:', error.message);
+    console.error('   Check EMAIL_USER and EMAIL_PASSWORD in .env file');
+    console.error('   For Gmail, you need an App Password (not your regular password)');
+    console.error('   Go to: https://myaccount.google.com/apppasswords');
+  } else {
+    console.log('✅ Email transporter is ready to send emails');
+  }
+});
+
 /**
  * Send payment receipt email
  */
@@ -509,13 +521,310 @@ export const sendTemporaryPIN = async (email, pin, fullName, schoolUId) => {
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    console.log(`📧 Attempting to send temporary PIN email to ${email}...`);
+    const info = await transporter.sendMail(mailOptions);
     console.log(`✅ Temporary PIN email sent to ${email}`);
+    console.log(`   Message ID: ${info.messageId}`);
     return true;
   } catch (error) {
     console.error('❌ Temporary PIN email error:', error.message);
+    console.error('   Full error:', error);
     return false;
   }
 };
 
-export default { sendReceipt, sendRefundReceipt, sendEmail, sendTemporaryPIN };
+/**
+ * Send concern status update email (In Progress)
+ */
+export const sendConcernInProgressEmail = async (userEmail, userName, concernData) => {
+  if (!userEmail) {
+    console.log('⚠️ No email provided, skipping concern update email');
+    return false;
+  }
+
+  const { concernId, subject, reportTo } = concernData;
+
+  const emailContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; border-bottom: 3px solid #35408E; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #35408E; margin: 0; }
+    .header p { color: #666; margin: 10px 0 0 0; }
+    .status-box { background: #FFD41C; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0; }
+    .status-box .status-icon { font-size: 36px; margin-bottom: 10px; }
+    .status-box .status-text { font-size: 18px; font-weight: bold; color: #181D40; margin: 0; }
+    .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }
+    .label { color: #666; font-weight: 500; }
+    .value { color: #333; font-weight: 600; }
+    .message-box { background: #f0f4ff; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #35408E; }
+    .message-box h3 { color: #35408E; margin: 0 0 10px 0; }
+    .message-box p { margin: 0; color: #333; line-height: 1.6; }
+    .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔄 Concern Update</h1>
+      <p>NUCash Support Team</p>
+    </div>
+
+    <p>Hello <strong>${userName}</strong>,</p>
+
+    <p>We wanted to let you know that your concern is now being reviewed by our team.</p>
+
+    <div class="status-box">
+      <div class="status-icon">📋</div>
+      <p class="status-text">IN PROGRESS</p>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Reference ID:</span>
+      <span class="value" style="font-family: monospace;">${concernId}</span>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Subject:</span>
+      <span class="value">${subject}</span>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Assigned To:</span>
+      <span class="value">${reportTo}</span>
+    </div>
+
+    <div class="message-box">
+      <h3>📝 What's Next?</h3>
+      <p>Our team is currently looking into your concern. We'll get back to you with a resolution as soon as possible.</p>
+      <p style="margin-top: 10px;">You can track the status of your concern anytime by logging into your NUCash dashboard and visiting the "My Concerns" section.</p>
+    </div>
+
+    <p>Thank you for your patience!</p>
+
+    <div class="footer">
+      <p>This is an automated message from NUCash System</p>
+      <p>National University - Laguna Campus</p>
+      <p>&copy; 2026 NUCash. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  const mailOptions = {
+    from: `"NUCash Support" <${process.env.EMAIL_USER}>`,
+    to: userEmail,
+    subject: `🔄 Your Concern is Being Reviewed - ${concernId}`,
+    html: emailContent
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Concern in-progress email sent to ${userEmail}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Concern in-progress email error:', error.message);
+    return false;
+  }
+};
+
+/**
+ * Send concern resolved email with admin reply
+ */
+export const sendConcernResolvedEmail = async (userEmail, userName, concernData) => {
+  if (!userEmail) {
+    console.log('⚠️ No email provided, skipping concern resolved email');
+    return false;
+  }
+
+  const { concernId, subject, reportTo, adminReply, resolvedBy } = concernData;
+
+  const emailContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; border-bottom: 3px solid #35408E; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #35408E; margin: 0; }
+    .header p { color: #666; margin: 10px 0 0 0; }
+    .status-box { background: #4CAF50; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0; }
+    .status-box .status-icon { font-size: 36px; margin-bottom: 10px; }
+    .status-box .status-text { font-size: 18px; font-weight: bold; color: #FFFFFF; margin: 0; }
+    .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }
+    .label { color: #666; font-weight: 500; }
+    .value { color: #333; font-weight: 600; }
+    .reply-box { background: #e8f5e9; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #4CAF50; }
+    .reply-box h3 { color: #2e7d32; margin: 0 0 15px 0; }
+    .reply-box .reply-content { color: #333; white-space: pre-wrap; line-height: 1.6; background: white; padding: 15px; border-radius: 8px; border: 1px solid #c8e6c9; }
+    .next-steps { background: #f0f4ff; padding: 15px; border-left: 4px solid #35408E; margin: 20px 0; }
+    .next-steps p { margin: 0; color: #333; }
+    .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>✅ Concern Resolved</h1>
+      <p>NUCash Support Team</p>
+    </div>
+
+    <p>Hello <strong>${userName}</strong>,</p>
+
+    <p>Great news! Your concern has been reviewed and resolved by our team.</p>
+
+    <div class="status-box">
+      <div class="status-icon">✅</div>
+      <p class="status-text">RESOLVED</p>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Reference ID:</span>
+      <span class="value" style="font-family: monospace;">${concernId}</span>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Subject:</span>
+      <span class="value">${subject}</span>
+    </div>
+
+    <div class="info-row">
+      <span class="label">Handled By:</span>
+      <span class="value">${reportTo}</span>
+    </div>
+
+    ${resolvedBy ? `
+    <div class="info-row">
+      <span class="label">Resolved By:</span>
+      <span class="value">${resolvedBy}</span>
+    </div>
+    ` : ''}
+
+    <div class="reply-box">
+      <h3>📝 Response from ${reportTo}:</h3>
+      <div class="reply-content">${adminReply}</div>
+    </div>
+
+    <div class="next-steps">
+      <p>If you have any further questions or if the issue persists, please don't hesitate to submit a new concern through your NUCash dashboard.</p>
+    </div>
+
+    <p>Thank you for using NUCash!</p>
+
+    <div class="footer">
+      <p>This is an automated message from NUCash System</p>
+      <p>National University - Laguna Campus</p>
+      <p>&copy; 2026 NUCash. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  const mailOptions = {
+    from: `"NUCash Support" <${process.env.EMAIL_USER}>`,
+    to: userEmail,
+    subject: `✅ Your Concern Has Been Resolved - ${concernId}`,
+    html: emailContent
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Concern resolved email sent to ${userEmail}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Concern resolved email error:', error.message);
+    return false;
+  }
+};
+
+/**
+ * Send deactivation OTP email
+ */
+export const sendDeactivationOtpEmail = async (email, userName, otp) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER || 'noreply@nucash.com',
+    to: email,
+    subject: '⚠️ NUCash - Account Deactivation Verification Code',
+    html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; border-bottom: 3px solid #EF4444; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #EF4444; margin: 0; }
+    .header p { color: #666; margin: 10px 0 0 0; }
+    .otp-box { background: #fef2f2; padding: 30px; text-align: center; border-radius: 10px; margin: 20px 0; border: 2px solid #EF4444; }
+    .otp-code { font-size: 48px; font-weight: bold; letter-spacing: 10px; color: #DC2626; margin: 20px 0; font-family: monospace; }
+    .otp-label { color: #666; font-size: 16px; font-weight: 600; margin: 0; }
+    .otp-expiry { color: #666; font-size: 14px; margin: 10px 0 0 0; }
+    .warning-box { background: #fff3e0; padding: 15px; border-left: 4px solid #ff9800; margin: 20px 0; color: #e65100; }
+    .warning-box strong { color: #e65100; }
+    .info-box { background: #e3f2fd; padding: 15px; border-left: 4px solid #2196f3; margin: 20px 0; }
+    .info-box strong { color: #1976d2; }
+    .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚠️ Account Deactivation Request</h1>
+      <p>NUCash Verification Code</p>
+    </div>
+
+    <p>Hello <strong>${userName}</strong>,</p>
+
+    <p>You have requested to deactivate your NUCash account. To proceed with this request, please use the verification code below:</p>
+
+    <div class="otp-box">
+      <p class="otp-label">Your Verification Code</p>
+      <div class="otp-code">${otp}</div>
+      <p class="otp-expiry">Valid for 10 minutes</p>
+    </div>
+
+    <div class="warning-box">
+      <strong>⚠️ Important Warning:</strong>
+      <p>Account deactivation will:</p>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+        <li>Disable your ability to use NUCash services</li>
+        <li>Require administrator approval to process</li>
+        <li>Any remaining balance must be settled with the Treasury Office</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <strong>📝 If you did not request this:</strong>
+      <p style="margin: 5px 0 0 0;">Please ignore this email and consider changing your PIN for security. Your account will remain active.</p>
+    </div>
+
+    <p>Need help? Contact the Treasury Office or email <a href="mailto:nucashsystem@gmail.com" style="color: #EF4444; text-decoration: none;">nucashsystem@gmail.com</a></p>
+
+    <div class="footer">
+      <p>This is an automated message from NUCash System</p>
+      <p>National University - Laguna Campus</p>
+      <p>&copy; 2026 NUCash. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Deactivation OTP sent to: ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send deactivation OTP email:', error);
+    throw error;
+  }
+};
+
+export default { sendReceipt, sendRefundReceipt, sendEmail, sendTemporaryPIN, sendConcernInProgressEmail, sendConcernResolvedEmail, sendDeactivationOtpEmail };

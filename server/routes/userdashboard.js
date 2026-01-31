@@ -352,27 +352,338 @@ router.get('/:userId/concerns', async (req, res) => {
 
 /**
  * POST /api/user/concerns
- * Submit a new concern or feedback
+ * Submit a new concern (assistance request)
  */
-router.post('/concerns', async (req, res) => {
+router.post('/concerns', verifyUserToken, async (req, res) => {
   try {
-    const { userId, email, message, type } = req.body;
+    const user = req.user;
+    const { department, merchant, subject, details } = req.body;
 
-    if (!userId || !message) {
-      return res.status(400).json({ error: 'User ID and message are required' });
+    if (!department) {
+      return res.status(400).json({ error: 'Department is required' });
+    }
+
+    if (!subject || !details) {
+      return res.status(400).json({ error: 'Subject and details are required' });
+    }
+
+    // Build the reportTo field based on department
+    let reportTo = department;
+    if (department === 'merchants' && merchant) {
+      reportTo = merchant;
     }
 
     const concern = await UserConcern.create({
-      userId,
-      email: email || '',
-      message,
-      type: type || 'assistance',
-      status: 'pending'
+      userId: user._id,
+      userName: user.fullName || `${user.firstName} ${user.lastName}`,
+      userEmail: user.email,
+      submissionType: 'assistance',
+      reportTo,
+      subject,
+      feedbackText: details,
+      selectedConcerns: [subject],
+      status: 'pending',
+      priority: 'medium'
     });
 
-    return res.json(concern);
+    console.log('✅ Concern submitted:', concern.concernId, 'by', user.email);
+
+    return res.json({
+      success: true,
+      concernId: concern.concernId,
+      message: 'Concern submitted successfully'
+    });
   } catch (error) {
     console.error('Error creating concern:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/user/feedback
+ * Submit feedback with rating
+ */
+router.post('/feedback', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { department, merchant, subject, feedback, rating } = req.body;
+
+    if (!department) {
+      return res.status(400).json({ error: 'Department is required' });
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating (1-5) is required' });
+    }
+
+    // Build the reportTo field based on department
+    let reportTo = department;
+    if (department === 'merchants' && merchant) {
+      reportTo = merchant;
+    }
+
+    const feedbackDoc = await UserConcern.create({
+      userId: user._id,
+      userName: user.fullName || `${user.firstName} ${user.lastName}`,
+      userEmail: user.email,
+      submissionType: 'feedback',
+      reportTo,
+      subject: subject || null,
+      feedbackText: feedback || null,
+      rating,
+      status: null,
+      priority: null
+    });
+
+    console.log('✅ Feedback submitted:', feedbackDoc.concernId, 'by', user.email, 'Rating:', rating);
+
+    return res.json({
+      success: true,
+      concernId: feedbackDoc.concernId,
+      message: 'Feedback submitted successfully'
+    });
+  } catch (error) {
+    console.error('Error creating feedback:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/user/merchants
+ * Get list of active merchants for concern dropdown
+ */
+router.get('/merchants', verifyUserToken, async (req, res) => {
+  try {
+    const Merchant = (await import('../models/Merchant.js')).default;
+
+    const merchants = await Merchant.find({ isActive: true })
+      .select('merchantId businessName')
+      .sort({ businessName: 1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      merchants: merchants.map(m => ({
+        value: m.businessName,
+        label: m.businessName
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching merchants:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// USER PROFILE & SECURITY ENDPOINTS
+// ============================================================
+
+// OTP storage for deactivation (in production, use Redis)
+const deactivationOtpStore = new Map();
+
+/**
+ * GET /api/user/profile
+ * Get user profile data
+ */
+router.get('/profile', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    return res.json({
+      success: true,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone || '',
+      schoolUId: user.schoolUId,
+      accountType: user.accountType || 'student',
+      isActive: user.isActive,
+      createdAt: user.createdAt
+    });
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * PUT /api/user/profile
+ * Update user profile
+ */
+router.put('/profile', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { firstName, lastName, phone } = req.body;
+
+    // Update allowed fields
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (phone !== undefined) user.phone = phone;
+
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/user/change-pin
+ * Change user PIN
+ */
+router.post('/change-pin', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { currentPin, newPin } = req.body;
+
+    if (!currentPin || !newPin) {
+      return res.status(400).json({ error: 'Current and new PIN are required' });
+    }
+
+    if (!/^\d{6}$/.test(newPin)) {
+      return res.status(400).json({ error: 'PIN must be exactly 6 digits' });
+    }
+
+    // Verify current PIN
+    let isValidPin = false;
+    if (user.pin.startsWith('$2b$') || user.pin.startsWith('$2a$')) {
+      isValidPin = await bcrypt.compare(currentPin, user.pin);
+    } else {
+      isValidPin = user.pin === currentPin;
+    }
+
+    if (!isValidPin) {
+      return res.status(401).json({ error: 'Current PIN is incorrect' });
+    }
+
+    // Hash and save new PIN
+    const salt = await bcrypt.genSalt(10);
+    user.pin = await bcrypt.hash(newPin, salt);
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'PIN changed successfully'
+    });
+  } catch (error) {
+    console.error('Error changing PIN:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/user/send-deactivation-otp
+ * Send OTP for account deactivation verification
+ */
+router.post('/send-deactivation-otp', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: 'Deactivation reason is required' });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store OTP with expiry (10 minutes)
+    deactivationOtpStore.set(user.email, {
+      otp,
+      reason: reason.trim(),
+      expiresAt: Date.now() + 10 * 60 * 1000
+    });
+
+    // Send email with OTP
+    const { sendDeactivationOtpEmail } = await import('../services/emailService.js');
+
+    try {
+      await sendDeactivationOtpEmail(user.email, user.firstName || 'User', otp);
+      console.log(`📧 Deactivation OTP sent to ${user.email}`);
+    } catch (emailError) {
+      console.error('Failed to send deactivation OTP email:', emailError);
+      // In development, log the OTP
+      console.log(`📝 Development OTP for ${user.email}: ${otp}`);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Verification code sent to your email'
+    });
+  } catch (error) {
+    console.error('Error sending deactivation OTP:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/user/request-deactivation
+ * Submit deactivation request with OTP verification
+ */
+router.post('/request-deactivation', verifyUserToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { reason, otp } = req.body;
+
+    if (!reason || !otp) {
+      return res.status(400).json({ error: 'Reason and verification code are required' });
+    }
+
+    // Verify OTP
+    const storedData = deactivationOtpStore.get(user.email);
+
+    if (!storedData) {
+      return res.status(400).json({ error: 'No verification code found. Please request a new code.' });
+    }
+
+    if (Date.now() > storedData.expiresAt) {
+      deactivationOtpStore.delete(user.email);
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+    }
+
+    if (storedData.otp !== otp) {
+      return res.status(401).json({ error: 'Invalid verification code' });
+    }
+
+    // Clear OTP
+    deactivationOtpStore.delete(user.email);
+
+    // Create deactivation request as a concern
+    await UserConcern.create({
+      userId: user._id,
+      userName: user.fullName || `${user.firstName} ${user.lastName}`,
+      userEmail: user.email,
+      submissionType: 'assistance',
+      reportTo: 'sysad',
+      subject: 'Account Deactivation Request',
+      feedbackText: `User has requested account deactivation.\n\nReason: ${reason.trim()}\n\nCurrent Balance: ₱${user.balance.toFixed(2)}\nSchool ID: ${user.schoolUId}`,
+      selectedConcerns: ['Account Deactivation'],
+      status: 'pending',
+      priority: 'high'
+    });
+
+    // Log the request
+    const { logUserAction } = await import('../utils/logger.js');
+    await logUserAction({
+      userId: user._id,
+      userName: user.fullName || `${user.firstName} ${user.lastName}`,
+      action: 'Deactivation Request',
+      description: 'submitted an account deactivation request',
+      details: { reason: reason.trim() }
+    });
+
+    console.log(`⚠️ Deactivation request from ${user.email}`);
+
+    return res.json({
+      success: true,
+      message: 'Deactivation request submitted successfully'
+    });
+  } catch (error) {
+    console.error('Error submitting deactivation request:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

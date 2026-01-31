@@ -1,5 +1,5 @@
 // client/src/components/modals/RegisterUserModal.jsx
-// Treasury admin modal for registering new users - Motorpool design style
+// Treasury admin modal for registering new users
 
 import React, { useState, useEffect, useRef } from 'react';
 import { X, UserPlus, CreditCard, AlertCircle, CheckCircle, User, Mail, IdCard, Loader2 } from 'lucide-react';
@@ -8,20 +8,25 @@ import api from '../../utils/api';
 import { toast } from 'react-toastify';
 
 // RFID Hex conversion utility (byte-reversed / little-endian)
-const convertToLittleEndianHex = (input) => {
+// Only converts if needed - doesn't double convert
+const normalizeRfidHex = (input) => {
   if (!input) return '';
 
-  // Remove any spaces, colons, or dashes
+  // Remove any spaces, colons, or dashes and uppercase
   let cleaned = input.replace(/[\s:-]/g, '').toUpperCase();
 
-  // Check if it's already hex
-  if (/^[0-9A-F]+$/.test(cleaned)) {
-    // If it's hex, reverse bytes (little-endian)
-    if (cleaned.length % 2 === 0) {
-      const bytes = cleaned.match(/.{2}/g) || [];
-      return bytes.reverse().join('');
-    }
+  // If it's already 8 character hex, assume it's already in correct format
+  if (/^[0-9A-F]{8}$/.test(cleaned)) {
     return cleaned;
+  }
+
+  // If it's a different length hex, try to normalize
+  if (/^[0-9A-F]+$/.test(cleaned)) {
+    // Pad to even length if needed
+    if (cleaned.length % 2 !== 0) cleaned = '0' + cleaned;
+    // Reverse bytes for little-endian
+    const bytes = cleaned.match(/.{2}/g) || [];
+    return bytes.reverse().join('');
   }
 
   // If it's decimal, convert to hex then reverse
@@ -30,6 +35,8 @@ const convertToLittleEndianHex = (input) => {
     let hex = decimal.toString(16).toUpperCase();
     // Pad to even length
     if (hex.length % 2 !== 0) hex = '0' + hex;
+    // Pad to 8 characters if less
+    while (hex.length < 8) hex = '0' + hex;
     // Reverse bytes
     const bytes = hex.match(/.{2}/g) || [];
     return bytes.reverse().join('');
@@ -50,6 +57,12 @@ const cleanSchoolId = (value) => {
   return value.replace(/\D/g, '').slice(0, 10);
 };
 
+// Mask RFID for display
+const maskRfid = (rfid) => {
+  if (!rfid || rfid.length < 4) return '***';
+  return '****' + rfid.slice(-4);
+};
+
 export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillRfid = '' }) {
   const { theme, isDarkMode } = useTheme();
   const [step, setStep] = useState(1); // 1: RFID Scan, 2: User Details, 3: Summary, 4: Success
@@ -57,8 +70,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
   const [checking, setChecking] = useState(false);
   const rfidInputRef = useRef(null);
 
+  // Store the normalized RFID separately from the input
+  const [rfidInput, setRfidInput] = useState('');
+  const [normalizedRfid, setNormalizedRfid] = useState('');
+
   const [formData, setFormData] = useState({
-    rfidUId: prefillRfid || '',
     firstName: '',
     middleName: '',
     lastName: '',
@@ -69,26 +85,29 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
   const [registeredUser, setRegisteredUser] = useState(null);
 
-  // Focus on RFID input when modal opens
+  // Handle prefilled RFID from cash-in modal
   useEffect(() => {
-    if (isOpen && step === 1 && rfidInputRef.current) {
-      setTimeout(() => rfidInputRef.current?.focus(), 100);
-    }
-  }, [isOpen, step]);
-
-  // Handle prefilled RFID
-  useEffect(() => {
-    if (prefillRfid && isOpen) {
-      setFormData(prev => ({ ...prev, rfidUId: prefillRfid }));
-      // Auto-proceed to step 2 if RFID is prefilled
-      handleRfidCheck(prefillRfid);
+    if (isOpen && prefillRfid) {
+      // prefillRfid is already normalized from CashInModal
+      setNormalizedRfid(prefillRfid);
+      setRfidInput(prefillRfid);
+      // Skip to step 2 since RFID is already provided
+      setStep(2);
     }
   }, [prefillRfid, isOpen]);
 
+  // Focus on RFID input when modal opens
+  useEffect(() => {
+    if (isOpen && step === 1 && rfidInputRef.current && !prefillRfid) {
+      setTimeout(() => rfidInputRef.current?.focus(), 100);
+    }
+  }, [isOpen, step, prefillRfid]);
+
   const resetForm = () => {
     setStep(1);
+    setRfidInput('');
+    setNormalizedRfid('');
     setFormData({
-      rfidUId: '',
       firstName: '',
       middleName: '',
       lastName: '',
@@ -106,23 +125,23 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
     onClose();
   };
 
-  // Handle RFID input change and convert to little-endian hex
+  // Handle RFID input change
   const handleRfidChange = (e) => {
     const value = e.target.value.toUpperCase();
-    setFormData(prev => ({ ...prev, rfidUId: value }));
+    setRfidInput(value);
   };
 
   // Check if RFID is already registered
-  const handleRfidCheck = async (rfidValue = formData.rfidUId) => {
-    if (!rfidValue.trim()) {
+  const handleRfidCheck = async () => {
+    if (!rfidInput.trim()) {
       toast.error('Please scan or enter RFID');
       return;
     }
 
     setChecking(true);
     try {
-      // Convert to little-endian hex format
-      const hexRfid = convertToLittleEndianHex(rfidValue.trim());
+      // Normalize the RFID to hex format
+      const hexRfid = normalizeRfidHex(rfidInput.trim());
 
       // Check if RFID exists
       const response = await api.get(`/admin/treasury/users/check-rfid?rfidUId=${hexRfid}`);
@@ -133,8 +152,8 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
         return;
       }
 
-      // RFID is available, proceed to user details
-      setFormData(prev => ({ ...prev, rfidUId: hexRfid }));
+      // RFID is available, store the normalized version and proceed
+      setNormalizedRfid(hexRfid);
       setStep(2);
     } catch (error) {
       console.error('RFID check error:', error);
@@ -183,13 +202,14 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
   const handleProceedToSummary = async () => {
     if (!validateForm()) return;
 
-    // Check if school ID is available
+    // Check if school ID and email are available
     setChecking(true);
     try {
       const schoolId = cleanSchoolId(formData.schoolUId);
-      const response = await api.get(`/admin/treasury/users/check-schoolid?schoolUId=${schoolId}`);
 
-      if (!response.available) {
+      // Check school ID
+      const schoolResponse = await api.get(`/admin/treasury/users/check-schoolid?schoolUId=${schoolId}`);
+      if (!schoolResponse.available) {
         toast.error('This School ID is already registered');
         setChecking(false);
         return;
@@ -197,8 +217,8 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
       setStep(3);
     } catch (error) {
-      console.error('School ID check error:', error);
-      toast.error(error.message || 'Error checking School ID');
+      console.error('Validation error:', error);
+      toast.error(error.message || 'Error validating user details');
     } finally {
       setChecking(false);
     }
@@ -212,7 +232,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
       const tempPin = Math.floor(100000 + Math.random() * 900000).toString();
 
       const payload = {
-        rfidUId: formData.rfidUId,
+        rfidUId: normalizedRfid,  // Use the normalized RFID
         firstName: formData.firstName.trim(),
         middleName: formData.middleName.trim(),
         lastName: formData.lastName.trim(),
@@ -222,15 +242,17 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
         pin: tempPin
       };
 
-      const response = await api.post('/treasury/register', payload);
+      const response = await api.post('/admin/treasury/users/register', payload);
 
       if (response.success) {
-        setRegisteredUser(response.user);
+        setRegisteredUser({ ...response.user, emailSent: response.emailSent });
         setStep(4);
         toast.success('User registered successfully!');
 
         if (response.emailSent) {
-          toast.info('Temporary PIN sent to user\'s email');
+          toast.info('Temporary PIN has been sent to the user\'s email');
+        } else {
+          toast.warning('Could not send email. Please inform the user of their temporary PIN manually.');
         }
       } else {
         toast.error(response.message || 'Registration failed');
@@ -252,13 +274,20 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      {/* Backdrop - covers everything including header */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={handleClose}
+      />
+
+      {/* Modal Content */}
       <div
         style={{
           background: isDarkMode ? '#1E2347' : '#FFFFFF',
           borderColor: theme.border.primary
         }}
-        className="rounded-2xl shadow-2xl border w-full max-w-3xl overflow-hidden animate-fadeIn"
+        className="relative rounded-2xl shadow-2xl border w-full max-w-2xl overflow-hidden animate-fadeIn"
       >
         {/* Header */}
         <div
@@ -291,10 +320,10 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
           </button>
         </div>
 
-        {/* Progress Indicator */}
+        {/* Progress Steps */}
         <div
           style={{ background: isDarkMode ? 'rgba(15,18,39,0.5)' : 'rgba(243,244,246,0.5)' }}
-          className="flex items-center justify-center gap-4 py-6"
+          className="flex items-center justify-center gap-3 py-4 px-6"
         >
           {[
             { num: 1, label: 'RFID' },
@@ -303,30 +332,28 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
             { num: 4, label: 'Complete' }
           ].map((s, i) => (
             <React.Fragment key={s.num}>
-              <div className={`flex items-center gap-2 ${step >= s.num ? '' : 'opacity-50'}`}>
+              <div className={`flex items-center gap-2 ${step >= s.num ? '' : 'opacity-40'}`}>
                 <div
                   style={{
                     background: step >= s.num ? theme.accent.primary : 'transparent',
                     borderColor: step >= s.num ? theme.accent.primary : theme.border.primary,
                     color: step >= s.num ? (isDarkMode ? '#181D40' : '#FFFFFF') : theme.text.secondary
                   }}
-                  className="w-10 h-10 rounded-full flex items-center justify-center font-bold border-2"
+                  className="w-8 h-8 rounded-full flex items-center justify-center font-bold border-2 text-sm"
                 >
-                  {step > s.num ? <CheckCircle className="w-5 h-5" /> : s.num}
+                  {step > s.num ? <CheckCircle className="w-4 h-4" /> : s.num}
                 </div>
                 <span
                   style={{ color: step >= s.num ? theme.accent.primary : theme.text.secondary }}
-                  className="hidden sm:inline font-semibold text-sm"
+                  className="hidden sm:inline font-medium text-sm"
                 >
                   {s.label}
                 </span>
               </div>
               {i < 3 && (
                 <div
-                  style={{
-                    background: step > s.num ? theme.accent.primary : theme.border.primary
-                  }}
-                  className="w-8 sm:w-16 h-1 rounded"
+                  style={{ background: step > s.num ? theme.accent.primary : theme.border.primary }}
+                  className="w-8 h-0.5 rounded"
                 />
               )}
             </React.Fragment>
@@ -334,11 +361,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 max-h-[60vh] overflow-y-auto">
 
           {/* STEP 1: RFID Scan */}
           {step === 1 && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div
                 style={{
                   background: isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)',
@@ -353,7 +380,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   </p>
                   <p style={{ color: theme.text.secondary }} className="text-sm mt-1">
                     Place the ID card on the RFID scanner or type the RFID manually.
-                    Format will be automatically converted to Hex (byte-reversed).
+                    Format will be automatically converted to Hex (little-endian).
                   </p>
                 </div>
               </div>
@@ -365,7 +392,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                 <input
                   ref={rfidInputRef}
                   type="text"
-                  value={formData.rfidUId}
+                  value={rfidInput}
                   onChange={handleRfidChange}
                   onKeyDown={handleRfidKeyDown}
                   placeholder="Scan or enter RFID..."
@@ -377,12 +404,14 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50 font-mono text-lg tracking-wider"
                   autoComplete="off"
                 />
-                <p style={{ color: theme.text.tertiary }} className="text-xs mt-2">
-                  The RFID will be automatically converted to little-endian hex format
-                </p>
+                {rfidInput && (
+                  <p style={{ color: theme.text.tertiary }} className="text-xs mt-2">
+                    Will be stored as: <span className="font-mono">{normalizeRfidHex(rfidInput)}</span>
+                  </p>
+                )}
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleClose}
                   style={{
@@ -394,8 +423,8 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleRfidCheck()}
-                  disabled={!formData.rfidUId.trim() || checking}
+                  onClick={handleRfidCheck}
+                  disabled={!rfidInput.trim() || checking}
                   style={{
                     background: theme.accent.primary,
                     color: isDarkMode ? '#181D40' : '#FFFFFF'
@@ -403,12 +432,9 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {checking ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Checking...
-                    </>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Checking...</>
                   ) : (
-                    <>Continue <span className="ml-1">→</span></>
+                    <>Continue →</>
                   )}
                 </button>
               </div>
@@ -424,14 +450,14 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   background: isDarkMode ? 'rgba(15,18,39,0.5)' : '#F9FAFB',
                   borderColor: theme.border.primary
                 }}
-                className="p-4 rounded-xl border flex items-center justify-between"
+                className="p-3 rounded-xl border flex items-center justify-between"
               >
                 <div className="flex items-center gap-3">
                   <CreditCard style={{ color: theme.accent.primary }} className="w-5 h-5" />
                   <div>
                     <p style={{ color: theme.text.secondary }} className="text-xs">RFID Tag</p>
                     <p style={{ color: theme.text.primary }} className="font-mono font-semibold">
-                      {'*'.repeat(formData.rfidUId.length - 4)}{formData.rfidUId.slice(-4)}
+                      {maskRfid(normalizedRfid)}
                     </p>
                   </div>
                 </div>
@@ -439,9 +465,9 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
               </div>
 
               {/* Name Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                  <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                     First Name <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -454,11 +480,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                       color: theme.text.primary,
                       borderColor: theme.border.primary
                     }}
-                    className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+                    className="w-full px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
                   />
                 </div>
                 <div>
-                  <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                  <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                     Middle Name
                   </label>
                   <input
@@ -471,11 +497,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                       color: theme.text.primary,
                       borderColor: theme.border.primary
                     }}
-                    className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+                    className="w-full px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
                   />
                 </div>
                 <div>
-                  <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                  <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                     Last Name <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -488,14 +514,14 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                       color: theme.text.primary,
                       borderColor: theme.border.primary
                     }}
-                    className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+                    className="w-full px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
                   />
                 </div>
               </div>
 
               {/* Role Selection */}
               <div>
-                <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                   User Type <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-3">
@@ -513,7 +539,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                           : theme.text.primary,
                         borderColor: formData.role === role ? theme.accent.primary : theme.border.primary
                       }}
-                      className="py-3 rounded-xl border font-semibold capitalize transition-all hover:opacity-90"
+                      className="py-2.5 rounded-xl border font-semibold capitalize transition-all hover:opacity-90"
                     >
                       {role === 'student' ? '🎓 ' : '👔 '}{role}
                     </button>
@@ -523,14 +549,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
               {/* School ID */}
               <div>
-                <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                   School ID <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <IdCard
-                    style={{ color: theme.text.tertiary }}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5"
-                  />
+                  <IdCard style={{ color: theme.text.tertiary }} className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" />
                   <input
                     type="text"
                     value={formData.schoolUId}
@@ -542,7 +565,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                       color: theme.text.primary,
                       borderColor: theme.border.primary
                     }}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50 font-mono"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50 font-mono"
                   />
                 </div>
                 <p style={{ color: theme.text.tertiary }} className="text-xs mt-1">
@@ -552,14 +575,11 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
               {/* Email */}
               <div>
-                <label style={{ color: theme.text.primary }} className="font-semibold mb-2 block text-sm">
+                <label style={{ color: theme.text.primary }} className="font-semibold mb-1.5 block text-sm">
                   Email Address <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <Mail
-                    style={{ color: theme.text.tertiary }}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5"
-                  />
+                  <Mail style={{ color: theme.text.tertiary }} className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" />
                   <input
                     type="email"
                     value={formData.email}
@@ -570,7 +590,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                       color: theme.text.primary,
                       borderColor: theme.border.primary
                     }}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-yellow-400/50"
                   />
                 </div>
                 <p style={{ color: theme.text.tertiary }} className="text-xs mt-1">
@@ -580,7 +600,13 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    if (prefillRfid) {
+                      handleClose();
+                    } else {
+                      setStep(1);
+                    }
+                  }}
                   style={{
                     background: isDarkMode ? 'rgba(71,85,105,0.5)' : '#E5E7EB',
                     color: theme.text.primary
@@ -599,12 +625,9 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {checking ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Validating...
-                    </>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Validating...</>
                   ) : (
-                    <>Continue <span className="ml-1">→</span></>
+                    <>Review →</>
                   )}
                 </button>
               </div>
@@ -613,7 +636,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
           {/* STEP 3: Summary */}
           {step === 3 && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div
                 style={{
                   background: isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)',
@@ -627,7 +650,7 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                     Review User Details
                   </p>
                   <p style={{ color: theme.text.secondary }} className="text-sm mt-1">
-                    Please verify all information before registering. A temporary PIN will be sent to the user's email.
+                    Please verify all information before registering.
                   </p>
                 </div>
               </div>
@@ -640,33 +663,30 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                 className="rounded-xl border overflow-hidden"
               >
                 {[
-                  { label: 'RFID Tag', value: '***' + formData.rfidUId.slice(-4), icon: CreditCard },
-                  { label: 'Full Name', value: `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}`, icon: User },
-                  { label: 'User Type', value: formData.role.charAt(0).toUpperCase() + formData.role.slice(1), icon: null, badge: true },
-                  { label: 'School ID', value: formData.schoolUId, icon: IdCard },
-                  { label: 'Email', value: formData.email, icon: Mail }
+                  { label: 'RFID Tag', value: maskRfid(normalizedRfid) },
+                  { label: 'Full Name', value: `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}` },
+                  { label: 'User Type', value: formData.role, badge: true },
+                  { label: 'School ID', value: formData.schoolUId },
+                  { label: 'Email', value: formData.email }
                 ].map((item, idx) => (
                   <div
                     key={item.label}
                     style={{ borderColor: theme.border.primary }}
-                    className={`flex justify-between items-center p-4 ${idx < 4 ? 'border-b' : ''}`}
+                    className={`flex justify-between items-center px-4 py-3 ${idx < 4 ? 'border-b' : ''}`}
                   >
-                    <div className="flex items-center gap-3">
-                      {item.icon && <item.icon style={{ color: theme.text.tertiary }} className="w-4 h-4" />}
-                      <span style={{ color: theme.text.secondary }}>{item.label}</span>
-                    </div>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">{item.label}</span>
                     {item.badge ? (
                       <span
                         style={{
                           background: formData.role === 'student' ? 'rgba(59,130,246,0.2)' : 'rgba(168,85,247,0.2)',
                           color: formData.role === 'student' ? '#3B82F6' : '#A855F7'
                         }}
-                        className="px-3 py-1 rounded-full text-sm font-semibold"
+                        className="px-3 py-1 rounded-full text-sm font-semibold capitalize"
                       >
-                        {formData.role === 'student' ? '🎓' : '👔'} {item.value}
+                        {formData.role === 'student' ? '🎓 ' : '👔 '}{item.value}
                       </span>
                     ) : (
-                      <span style={{ color: theme.text.primary }} className="font-semibold">
+                      <span style={{ color: theme.text.primary }} className="font-semibold text-sm">
                         {item.value}
                       </span>
                     )}
@@ -676,18 +696,18 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
               <div
                 style={{
-                  background: isDarkMode ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.1)',
+                  background: 'rgba(16,185,129,0.1)',
                   borderColor: 'rgba(16,185,129,0.3)'
                 }}
                 className="p-4 rounded-xl border"
               >
-                <p style={{ color: '#10B981' }} className="font-semibold text-sm">
+                <p className="font-semibold text-sm text-emerald-500">
                   📧 What happens next?
                 </p>
                 <ul style={{ color: theme.text.secondary }} className="text-sm mt-2 space-y-1">
                   <li>• A temporary PIN will be generated and emailed to the user</li>
-                  <li>• The user must log in and change their PIN to activate their account</li>
-                  <li>• Account status: <span className="font-semibold text-yellow-500">Inactive</span> until PIN is changed</li>
+                  <li>• The user must log in and change their PIN to activate</li>
+                  <li>• Status: <span className="font-semibold text-yellow-500">Inactive</span> until PIN is changed</li>
                 </ul>
               </div>
 
@@ -701,27 +721,17 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                   }}
                   className="flex-1 py-3 rounded-xl font-semibold transition-all hover:opacity-80 disabled:opacity-50"
                 >
-                  ← Back
+                  ← Edit
                 </button>
                 <button
                   onClick={handleRegister}
                   disabled={loading}
-                  style={{
-                    background: '#10B981',
-                    color: '#FFFFFF'
-                  }}
-                  className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-xl font-bold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 bg-emerald-500 text-white"
                 >
                   {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Registering...
-                    </>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Registering...</>
                   ) : (
-                    <>
-                      <UserPlus className="w-5 h-5" />
-                      Register User
-                    </>
+                    <><UserPlus className="w-5 h-5" /> Register User</>
                   )}
                 </button>
               </div>
@@ -730,22 +740,56 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
 
           {/* STEP 4: Success */}
           {step === 4 && (
-            <div className="text-center space-y-6">
-              <div
-                style={{ background: 'rgba(16,185,129,0.2)' }}
-                className="w-20 h-20 rounded-full flex items-center justify-center mx-auto"
-              >
-                <CheckCircle className="w-12 h-12 text-green-500" />
+            <div className="text-center space-y-5">
+              <div style={{ background: 'rgba(16,185,129,0.2)' }} className="w-20 h-20 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle className="w-12 h-12 text-emerald-500" />
               </div>
 
               <div>
-                <h3 style={{ color: '#10B981' }} className="text-2xl font-bold">
-                  Registration Successful!
-                </h3>
+                <h3 className="text-2xl font-bold text-emerald-500">Registration Successful!</h3>
                 <p style={{ color: theme.text.secondary }} className="mt-2">
-                  The user has been registered and a temporary PIN has been sent to their email.
+                  {registeredUser?.emailSent
+                    ? 'A temporary PIN has been sent to the user\'s email.'
+                    : 'User registered but email could not be sent.'}
                 </p>
               </div>
+
+              {/* Email Status */}
+              {registeredUser && !registeredUser.emailSent && (
+                <div
+                  style={{
+                    background: 'rgba(251,191,36,0.15)',
+                    borderColor: 'rgba(251,191,36,0.4)'
+                  }}
+                  className="p-4 rounded-xl border flex items-start gap-3 text-left"
+                >
+                  <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-yellow-500" />
+                  <div>
+                    <p className="font-semibold text-yellow-500 text-sm">Email Not Sent</p>
+                    <p style={{ color: theme.text.secondary }} className="text-sm mt-1">
+                      Please inform the user of their temporary PIN manually or ask them to request a new PIN through the app.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {registeredUser && registeredUser.emailSent && (
+                <div
+                  style={{
+                    background: 'rgba(16,185,129,0.15)',
+                    borderColor: 'rgba(16,185,129,0.4)'
+                  }}
+                  className="p-4 rounded-xl border flex items-start gap-3 text-left"
+                >
+                  <Mail className="w-5 h-5 mt-0.5 flex-shrink-0 text-emerald-500" />
+                  <div>
+                    <p className="font-semibold text-emerald-500 text-sm">Email Sent Successfully</p>
+                    <p style={{ color: theme.text.secondary }} className="text-sm mt-1">
+                      The user should check their inbox (and spam folder) for the temporary PIN.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {registeredUser && (
                 <div
@@ -753,34 +797,34 @@ export default function RegisterUserModal({ isOpen, onClose, onSuccess, prefillR
                     background: isDarkMode ? 'rgba(15,18,39,0.5)' : '#F9FAFB',
                     borderColor: theme.border.primary
                   }}
-                  className="rounded-xl border p-6 text-left space-y-3"
+                  className="rounded-xl border p-5 text-left space-y-2"
                 >
                   <div className="flex justify-between">
-                    <span style={{ color: theme.text.secondary }}>User ID</span>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">User ID</span>
                     <span style={{ color: theme.text.primary }} className="font-mono font-semibold">
                       {registeredUser.userId}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span style={{ color: theme.text.secondary }}>Name</span>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">Name</span>
                     <span style={{ color: theme.text.primary }} className="font-semibold">
                       {registeredUser.firstName} {registeredUser.lastName}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span style={{ color: theme.text.secondary }}>School ID</span>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">School ID</span>
                     <span style={{ color: theme.text.primary }} className="font-mono">
                       {registeredUser.schoolUId}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span style={{ color: theme.text.secondary }}>Email</span>
-                    <span style={{ color: theme.text.primary }}>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">Email</span>
+                    <span style={{ color: theme.text.primary }} className="text-sm">
                       {registeredUser.email}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span style={{ color: theme.text.secondary }}>Status</span>
+                  <div className="flex justify-between pt-2 border-t" style={{ borderColor: theme.border.primary }}>
+                    <span style={{ color: theme.text.secondary }} className="text-sm">Status</span>
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-500">
                       Pending Activation
                     </span>

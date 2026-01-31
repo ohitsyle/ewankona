@@ -360,10 +360,19 @@ router.get('/export/:type', async (req, res) => {
 /**
  * GET /admin/configurations/export-history
  * Get export history (manual exports only)
+ * Query params: adminRole (optional) - filter by admin role (treasury, merchant, motorpool, sysad)
  */
 router.get('/export-history', async (req, res) => {
   try {
-    const history = await ExportHistory.find({ triggeredBy: 'manual' })
+    const { adminRole } = req.query;
+    const query = { triggeredBy: 'manual' };
+
+    // Filter by admin role if provided
+    if (adminRole) {
+      query.adminRole = adminRole;
+    }
+
+    const history = await ExportHistory.find(query)
       .sort({ exportedAt: -1 })
       .limit(50);
     res.json(history);
@@ -376,10 +385,19 @@ router.get('/export-history', async (req, res) => {
 /**
  * GET /admin/configurations/scheduled-exports
  * Get scheduled (automatic) export history
+ * Query params: adminRole (optional) - filter by admin role (treasury, merchant, motorpool, sysad)
  */
 router.get('/scheduled-exports', async (req, res) => {
   try {
-    const scheduledExports = await ExportHistory.find({ triggeredBy: 'automatic' })
+    const { adminRole } = req.query;
+    const query = { triggeredBy: 'automatic' };
+
+    // Filter by admin role if provided
+    if (adminRole) {
+      query.adminRole = adminRole;
+    }
+
+    const scheduledExports = await ExportHistory.find(query)
       .sort({ exportedAt: -1 })
       .limit(100);
     res.json(scheduledExports);
@@ -500,6 +518,93 @@ router.post('/manual-export-merchant', async (req, res) => {
   } catch (error) {
     console.error('Error merchant export:', error);
     res.status(500).json({ error: 'Failed to export merchant data' });
+  }
+});
+
+/**
+ * POST /admin/configurations/manual-export-treasury
+ * Manually trigger treasury export (multiple types as ZIP)
+ */
+router.post('/manual-export-treasury', async (req, res) => {
+  try {
+    const { exportTypes, dateRange, customStartDate, customEndDate } = req.body;
+
+    if (!exportTypes || !Array.isArray(exportTypes) || exportTypes.length === 0) {
+      return res.status(400).json({ error: 'Export types array is required' });
+    }
+
+    // Prepare date filter
+    const dateFilter = {};
+    if (dateRange === 'custom' && customStartDate && customEndDate) {
+      dateFilter.startDate = customStartDate;
+      dateFilter.endDate = customEndDate;
+    } else if (dateRange === '24hr') {
+      const now = new Date();
+      dateFilter.startDate = new Date(now - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      dateFilter.endDate = now.toISOString().split('T')[0];
+    } else if (dateRange === 'week') {
+      const now = new Date();
+      dateFilter.startDate = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      dateFilter.endDate = now.toISOString().split('T')[0];
+    } else if (dateRange === 'month') {
+      const now = new Date();
+      dateFilter.startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      dateFilter.endDate = now.toISOString().split('T')[0];
+    }
+
+    const AdmZip = (await import('adm-zip')).default;
+    const zip = new AdmZip();
+    let totalRecords = 0;
+
+    // Map treasury export types to actual data types
+    const typeMapping = {
+      'Transactions': 'transactions',
+      'Cash-Ins': 'cashins',
+      'Users': 'users',
+      'Balances': 'balances',
+      'Logs': 'logs',
+      'Concerns': 'concerns'
+    };
+
+    // Export each selected type and add to ZIP
+    for (const type of exportTypes) {
+      try {
+        const actualType = typeMapping[type] || type.toLowerCase();
+        const { csv, count } = await exportByType(actualType, dateFilter);
+        const fileName = `${actualType}_export_${new Date().toISOString().split('T')[0]}.csv`;
+        zip.addFile(fileName, Buffer.from(csv, 'utf8'));
+        totalRecords += count;
+      } catch (error) {
+        console.error(`Error exporting ${type}:`, error);
+      }
+    }
+
+    const zipFileName = `treasury_export_${new Date().toISOString().split('T')[0]}.zip`;
+    const zipBuffer = zip.toBuffer();
+    const base64Data = zipBuffer.toString('base64');
+
+    // Save to export history (manual export)
+    const exportRecord = await new ExportHistory({
+      exportType: exportTypes.join(', '),
+      fileName: zipFileName,
+      recordCount: totalRecords,
+      triggeredBy: 'manual',
+      adminRole: 'treasury',
+      status: 'success',
+      fileData: base64Data,
+      fileSize: `${(zipBuffer.length / 1024).toFixed(2)} KB`
+    }).save();
+
+    res.json({
+      message: 'Treasury export successful',
+      fileName: zipFileName,
+      totalRecords,
+      downloadUrl: `data:application/zip;base64,${base64Data}`,
+      exportId: exportRecord._id
+    });
+  } catch (error) {
+    console.error('Error treasury export:', error);
+    res.status(500).json({ error: 'Failed to export treasury data' });
   }
 });
 

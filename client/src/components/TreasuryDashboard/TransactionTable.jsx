@@ -1,16 +1,14 @@
 // client/src/components/TreasuryDashboard/TransactionTable.jsx
 import React from "react";
-import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
 
 export default function TransactionTable({
   transactions = [],
   onRowClick,
-  showHeader = true,
+  showHeader = false, // Changed default to false - no more yellow header
   showColors = true,
   compact = false
 }) {
-  const navigate = useNavigate();
   const { theme, isDarkMode } = useTheme();
   const baseColor = isDarkMode ? '255, 212, 28' : '59, 130, 246';
 
@@ -48,81 +46,78 @@ export default function TransactionTable({
     return tx.transactionId || tx.id || tx._id || 'N/A';
   };
 
-  // Check for both merchantId and MER-prefixed idNumber
-  const isCashOut = (tx) => {
-    const hasMerchantId = Boolean(tx.merchantId) || (tx.idNumber && tx.idNumber.startsWith('MER'));
-    const result = tx.transactionType === 'debit' && hasMerchantId;
-    return result;
-  };
-
-  // Determine if transaction is a user cash-in
+  // Check if it's a cash-in (credit) transaction
   const isCashIn = (tx) => {
-    return tx.transactionType === 'credit' && !tx.merchantId;
+    return tx.transactionType === 'credit';
   };
 
-  // Get ID/Merchant to display
+  // Check if it's a payment (debit) transaction - user paying merchant
+  const isPayment = (tx) => {
+    return tx.transactionType === 'debit';
+  };
+
+  // Get ID Number to display
   const getIdentifier = (tx) => {
-    if (isCashOut(tx)) return tx.merchantId || tx.idNumber;
     return tx.idNumber || tx.schoolUId || 'N/A';
   };
 
-  // Get details
+  // Get details/description
   const getDetails = (tx) => {
-    if (isCashOut(tx)) {
-      const merchantInfo = tx.businessName ||
-                          tx.userName ||
-                          tx.displayIdNumber ||
-                          tx.merchantId ||
-                          tx.idNumber ||
-                          'Merchant';
-      return `Cash-Out: ${merchantInfo}`;
-    }
-
     if (isCashIn(tx)) {
       const userName = tx.userName || 'User';
       return `Cash-In: ${userName}`;
     }
 
+    if (isPayment(tx)) {
+      const merchantInfo = tx.businessName || tx.merchantName || 'Merchant';
+      return `Payment: ${merchantInfo}`;
+    }
+
     return tx.description || tx.userName || 'Transaction';
   };
 
-  // Get amount color (treasury perspective)
-  const getAmountColor = (tx) => {
-    if (!showColors) {
-      return 'text-white/90';
-    }
-
-    if (isCashOut(tx)) {
-      return 'text-red-400';
-    }
-
+  // Get processed by info
+  const getProcessedBy = (tx) => {
+    // For cash-in transactions, show the admin who processed it
     if (isCashIn(tx)) {
-      return 'text-green-400';
+      if (tx.adminName) return tx.adminName;
+      if (tx.processedBy) return tx.processedBy;
+      if (tx.adminId) return `Admin #${tx.adminId}`;
+      return 'Treasury';
     }
 
-    return 'text-white/90';
+    // For payments, show a dash since it's automated
+    return '—';
   };
 
-  // Format amount with sign (from treasury's perspective)
+  // Format amount with sign
   const formatAmount = (tx) => {
     const amount = Number(tx.amount).toFixed(2);
-
-    if (!showColors) {
-      if (isCashOut(tx)) {
-        return `- ₱${amount}`;
-      }
-      return `₱${amount}`;
-    }
-
-    if (isCashOut(tx)) {
-      return `- ₱${amount}`;
-    }
 
     if (isCashIn(tx)) {
       return `+ ₱${amount}`;
     }
 
+    if (isPayment(tx)) {
+      return `- ₱${amount}`;
+    }
+
     return `₱${amount}`;
+  };
+
+  // Get amount color
+  const getAmountColor = (tx) => {
+    if (!showColors) return theme.text.primary;
+
+    if (isCashIn(tx)) {
+      return '#10B981'; // Green for cash-in
+    }
+
+    if (isPayment(tx)) {
+      return '#EF4444'; // Red for payment/debit
+    }
+
+    return theme.text.primary;
   };
 
   return (
@@ -137,29 +132,6 @@ export default function TransactionTable({
         boxShadow: isDarkMode ? '0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(59,130,246,0.1)'
       }}
     >
-      {/* Optional Top Header */}
-      {showHeader && (
-        <div
-          style={{
-            background: theme.accent.primary,
-            padding: '8px 16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}
-        >
-          <h3
-            style={{
-              color: theme.accent.secondary,
-              fontWeight: 'bold',
-              fontSize: '1rem'
-            }}
-          >
-            📋 Recent Transactions
-          </h3>
-        </div>
-      )}
-
       {/* Table Container */}
       {transactions.length === 0 ? (
         <div
@@ -188,7 +160,7 @@ export default function TransactionTable({
             {/* Table Header */}
             <thead>
               <tr style={{ background: `rgba(${baseColor}, 0.1)` }}>
-                {["Date", "Time", "ID Number", "Details", "Amount", "Transaction ID"].map((h) => (
+                {["Date", "Time", "ID Number", "Details", "Amount", "Processed By", "Transaction ID"].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -211,16 +183,7 @@ export default function TransactionTable({
             <tbody>
               {transactions.map((tx, idx) => {
                 const formattedAmount = formatAmount(tx);
-
-                // Determine amount color based on transaction type
-                let amountColor = theme.text.primary;
-                if (showColors) {
-                  if (isCashOut(tx)) {
-                    amountColor = '#EF4444'; // Red for cash-out
-                  } else if (isCashIn(tx)) {
-                    amountColor = '#10B981'; // Green for cash-in
-                  }
-                }
+                const amountColor = getAmountColor(tx);
 
                 return (
                   <tr
@@ -228,7 +191,7 @@ export default function TransactionTable({
                     onClick={() => onRowClick?.(tx)}
                     style={{
                       borderBottom: `1px solid ${theme.border.primary}`,
-                      cursor: 'pointer',
+                      cursor: onRowClick ? 'pointer' : 'default',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
@@ -245,7 +208,7 @@ export default function TransactionTable({
                       {formatTime(tx)}
                     </td>
 
-                    {/* ID/Merchant */}
+                    {/* ID Number */}
                     <td style={{ padding: '12px 16px', textAlign: 'center', color: theme.text.primary, fontFamily: 'monospace', fontSize: '11px', fontWeight: 700 }}>
                       {getIdentifier(tx)}
                     </td>
@@ -258,6 +221,11 @@ export default function TransactionTable({
                     {/* Amount with Color */}
                     <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 'bold', color: amountColor }}>
                       {formattedAmount}
+                    </td>
+
+                    {/* Processed By */}
+                    <td style={{ padding: '12px 16px', textAlign: 'center', color: theme.text.secondary, fontSize: '12px' }}>
+                      {getProcessedBy(tx)}
                     </td>
 
                     {/* Transaction ID */}

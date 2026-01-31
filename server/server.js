@@ -53,12 +53,16 @@ import configurationsRoutes from './routes/configurations.js';
 import userDashboardRoutes from './routes/userdashboard.js';
 import activationRoutes from './routes/activation.js';
 import treasuryRoutes from './routes/treasury.js';
+import accountingRoutes from './routes/accounting.js';
+import sysadRoutes from './routes/sysad.js';
 import { initializeAutoExportCron } from './jobs/autoExportCron.js';
 
 // Mount all API routes at /api
 // NOTE: More specific routes MUST come before more general routes
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/treasury', treasuryRoutes);
+app.use('/api/admin/accounting', accountingRoutes);
+app.use('/api/admin/sysad', sysadRoutes);
 app.use('/api/admin/promotions', promotionsRoutes);
 app.use('/api/admin/configurations', configurationsRoutes);
 app.use('/api/admin', adminRoutes); // General admin routes AFTER specific admin/* routes

@@ -34,11 +34,12 @@ export default function UnifiedLogin() {
   const detectRole = (emailAddress) => {
     const lowerEmail = emailAddress.toLowerCase();
 
-    // Admin patterns (includes motorpool, merchant, treasury, accounting admins)
+    // Admin patterns (includes motorpool, merchant, treasury, accounting, sysad admins)
     if (lowerEmail.includes('motorpool') ||
         lowerEmail.includes('treasury') ||
         lowerEmail.includes('accounting') ||
         lowerEmail.includes('admin') ||
+        lowerEmail.includes('sysad') ||
         lowerEmail.includes('merchant') ||
         lowerEmail.includes('cafeteria') ||
         lowerEmail.includes('bookstore') ||
@@ -154,9 +155,9 @@ export default function UnifiedLogin() {
         throw new Error('Server error: Missing authentication token');
       }
 
-      // Check if the response contains an admin role (motorpool, merchant, treasury, accounting, etc.)
+      // Check if the response contains an admin role (motorpool, merchant, treasury, accounting, sysad, etc.)
       // This overrides the email-based detection
-      const isAdminResponse = data.role && ['motorpool', 'merchant', 'treasury', 'accounting', 'cafeteria', 'bookstore', 'printshop'].includes(data.role);
+      const isAdminResponse = data.role && ['motorpool', 'merchant', 'treasury', 'accounting', 'sysad', 'cafeteria', 'bookstore', 'printshop'].includes(data.role);
       const actualRole = isAdminResponse ? 'admin' : detectedRole;
 
       // Get the correct config based on actual role
@@ -205,6 +206,8 @@ export default function UnifiedLogin() {
           redirectUrl = '/admin/treasury/dashboard';
         } else if (data.role === 'accounting') {
           redirectUrl = '/admin/accounting/home';
+        } else if (data.role === 'sysad') {
+          redirectUrl = '/admin/sysad/dashboard';
         } else {
           redirectUrl = `/admin/${data.role}`;
         }

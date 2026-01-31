@@ -98,7 +98,7 @@ export default function TreasuryDashboard() {
           <span>🏠</span> Treasury Home
         </h2>
         <p style={{ color: theme.text.secondary }} className="text-[13px] m-0">
-          Cash-in operations and transaction monitoring • Auto-updates every 5 seconds
+          Cash-in and User Registration operations with transaction monitoring • Auto-updates every 5 seconds
         </p>
       </div>
 
@@ -113,121 +113,119 @@ export default function TreasuryDashboard() {
           theme={theme}
         />
         <StatCard
-          icon="💸"
-          label="TODAY'S CASH-OUT"
-          value={`₱${(stats.todayCashOut || 0).toLocaleString()}`}
-          subtitle="withdrawn today"
-          color="#EF4444"
-          theme={theme}
-        />
-        <StatCard
           icon="📊"
           label="TODAY'S TRANSACTIONS"
           value={stats.todayTransactions || 0}
-          subtitle="total transactions"
+          subtitle="cash-ins today"
           color="#3B82F6"
           theme={theme}
         />
         <StatCard
           icon="👥"
-          label="ACTIVE USERS"
-          value={`${stats.activeUsers || 0}/${stats.totalUsers || 0}`}
-          subtitle="active / total"
+          label="REGISTERED USERS"
+          value={stats.totalUsers || 0}
+          subtitle={`${stats.activeUsers || 0} active`}
           color="#A855F7"
+          theme={theme}
+        />
+        <StatCard
+          icon="🏪"
+          label="MERCHANTS"
+          value={stats.totalMerchants || 0}
+          subtitle="registered"
+          color="#F59E0B"
           theme={theme}
         />
       </div>
 
-      {/* Two Column Layout: Actions on Left, Transactions on Right */}
-      <div className="flex-1 grid grid-cols-[350px_1fr] gap-6 min-h-0">
-        {/* Left Column - Action Buttons */}
-        <div className="flex flex-col gap-4">
-          <button
-            onClick={() => {
-              setPrefillRfid('');
-              setShowCashInModal(true);
-            }}
-            style={{
-              background: isDarkMode
-                ? 'linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(16,185,129,0.1) 100%)'
-                : 'linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(16,185,129,0.1) 100%)',
-              borderColor: 'rgba(16,185,129,0.3)'
-            }}
-            className="p-5 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.02] hover:shadow-lg cursor-pointer"
+      {/* Action Buttons Row - Same grid as stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        {/* Cash-In Button - spans 2 columns */}
+        <button
+          onClick={() => {
+            setPrefillRfid('');
+            setShowCashInModal(true);
+          }}
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(16,185,129,0.1) 100%)'
+              : 'linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(16,185,129,0.1) 100%)',
+            borderColor: 'rgba(16,185,129,0.3)'
+          }}
+          className="col-span-2 p-5 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] hover:shadow-lg cursor-pointer"
+        >
+          <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0" style={{ background: 'rgba(16,185,129,0.2)' }}>
+            💵
+          </div>
+          <div className="text-left">
+            <h3 className="text-base font-bold text-emerald-500 m-0">Cash-In for User</h3>
+            <p style={{ color: theme.text.secondary }} className="text-xs m-0 mt-1">
+              Load balance to NUCash account
+            </p>
+          </div>
+        </button>
+
+        {/* Register Button - spans 2 columns */}
+        <button
+          onClick={() => {
+            setPrefillRfid('');
+            setShowRegisterModal(true);
+          }}
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, rgba(255,212,28,0.2) 0%, rgba(255,212,28,0.1) 100%)'
+              : 'linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(59,130,246,0.1) 100%)',
+            borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'
+          }}
+          className="col-span-2 p-5 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] hover:shadow-lg cursor-pointer"
+        >
+          <div
+            className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0"
+            style={{ background: isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)' }}
           >
-            <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0" style={{ background: 'rgba(16,185,129,0.2)' }}>
-              💵
-            </div>
-            <div className="text-left">
-              <h3 className="text-base font-bold text-emerald-500 m-0">Cash-In for User</h3>
-              <p style={{ color: theme.text.secondary }} className="text-xs m-0 mt-1">
-                Load balance to NUCash account
+            👤
+          </div>
+          <div className="text-left">
+            <h3 style={{ color: theme.accent.primary }} className="text-base font-bold m-0">Register New User</h3>
+            <p style={{ color: theme.text.secondary }} className="text-xs m-0 mt-1">
+              Add student or employee to NUCash
+            </p>
+          </div>
+        </button>
+      </div>
+
+      {/* Recent Transactions - Full width */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl border overflow-hidden flex-1 flex flex-col">
+          <div style={{ borderColor: theme.border.primary }} className="p-4 border-b flex justify-between items-center flex-shrink-0">
+            <div>
+              <h3 style={{ color: theme.accent.primary }} className="m-0 mb-1 text-base font-bold">
+                📋 Recent Transactions
+              </h3>
+              <p style={{ color: theme.text.secondary }} className="m-0 text-xs">
+                Latest cash-in and cash-out activities
               </p>
             </div>
-          </button>
-
-          <button
-            onClick={() => {
-              setPrefillRfid('');
-              setShowRegisterModal(true);
-            }}
-            style={{
-              background: isDarkMode
-                ? 'linear-gradient(135deg, rgba(255,212,28,0.2) 0%, rgba(255,212,28,0.1) 100%)'
-                : 'linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(59,130,246,0.1) 100%)',
-              borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)'
-            }}
-            className="p-5 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.02] hover:shadow-lg cursor-pointer"
-          >
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0"
-              style={{ background: isDarkMode ? 'rgba(255,212,28,0.2)' : 'rgba(59,130,246,0.2)' }}
-            >
-              👤
+            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.2)] px-3 py-1.5 rounded-[20px] border border-[rgba(16,185,129,0.3)]">
+              <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
+              <span className="text-[#10B981] text-xs font-semibold">LIVE</span>
             </div>
-            <div className="text-left">
-              <h3 style={{ color: theme.accent.primary }} className="text-base font-bold m-0">Register New User</h3>
-              <p style={{ color: theme.text.secondary }} className="text-xs m-0 mt-1">
-                Add student or employee to NUCash
-              </p>
-            </div>
-          </button>
-
           </div>
 
-        {/* Right Column - Recent Transactions */}
-        <div className="overflow-hidden flex flex-col">
-          <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl border overflow-hidden flex-1 flex flex-col">
-            <div style={{ borderColor: theme.border.primary }} className="p-4 border-b flex justify-between items-center flex-shrink-0">
-              <div>
-                <h3 style={{ color: theme.accent.primary }} className="m-0 mb-1 text-base font-bold">
-                  📋 Recent Transactions
-                </h3>
-                <p style={{ color: theme.text.secondary }} className="m-0 text-xs">
-                  Latest cash-in and cash-out activities
-                </p>
+          {/* Transaction Table */}
+          <div className="p-4 overflow-y-auto flex-1">
+            {recentTransactions.length === 0 ? (
+              <div style={{ color: theme.text.tertiary }} className="text-center py-16">
+                <div className="text-5xl mb-4">📋</div>
+                <p>No transactions yet today</p>
               </div>
-              <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.2)] px-3 py-1.5 rounded-[20px] border border-[rgba(16,185,129,0.3)]">
-                <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-                <span className="text-[#10B981] text-xs font-semibold">LIVE</span>
-              </div>
-            </div>
-
-            {/* Transaction Table */}
-            <div className="p-4 overflow-y-auto flex-1">
-              {recentTransactions.length === 0 ? (
-                <div style={{ color: theme.text.tertiary }} className="text-center py-16">
-                  <div className="text-5xl mb-4">📋</div>
-                  <p>No transactions yet today</p>
-                </div>
-              ) : (
-                <TransactionTable
-                  transactions={recentTransactions}
-                  showHeader={false}
-                  compact={true}
-                />
-              )}
-            </div>
+            ) : (
+              <TransactionTable
+                transactions={recentTransactions}
+                showHeader={false}
+                compact={true}
+              />
+            )}
           </div>
         </div>
       </div>

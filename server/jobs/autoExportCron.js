@@ -1,11 +1,17 @@
 // server/jobs/autoExportCron.js
 // Cron job for automated exports based on configuration
+//
+// IMPORTANT: This job is READ-ONLY for all data. It only:
+// - Reads Configuration (autoExport settings)
+// - Reads export data via exportByType() (Drivers, Routes, Trips, etc. - no deletes/updates)
+// - Writes to ExportHistory (export metadata and file data)
+// It does NOT modify or delete User, Admin, or any auth/account data.
 
 import cron from 'node-cron';
 import Configuration from '../models/Configuration.js';
 import ExportHistory from '../models/ExportHistory.js';
-import { exportByType } from '../utils/csvExporter.js';
 import { sendEmail } from '../services/emailService.js';
+// csvExporter (and thus User) is NOT imported here - loaded only when an export actually runs (see processAutoExport)
 
 /**
  * Process auto-export for a specific role
@@ -33,6 +39,9 @@ async function processAutoExport(role) {
     }
 
     console.log(`[Auto-Export] Exporting types for ${role}:`, exportTypes);
+
+    // Load csvExporter only when we actually run an export (avoids touching User model during "check" only)
+    const { exportByType } = await import('../utils/csvExporter.js');
 
     const AdmZip = (await import('adm-zip')).default;
     const zip = new AdmZip();
@@ -120,7 +129,25 @@ async function checkAndProcessAutoExports() {
   try {
     console.log('[Auto-Export] Checking for scheduled exports...');
 
+    // Diagnostic: log User count before any other DB work (helps debug "user disappears after this message")
+    try {
+      const User = (await import('../models/User.js')).default;
+      const countBefore = await User.countDocuments();
+      console.log(`[Auto-Export] User count before check: ${countBefore}`);
+    } catch (e) {
+      console.log('[Auto-Export] (Could not log user count:', e.message, ')');
+    }
+
     const configs = await Configuration.find({ configType: 'autoExport' });
+
+    // Diagnostic: log User count after Configuration.find (if count dropped, something in this path removed a user)
+    try {
+      const User = (await import('../models/User.js')).default;
+      const countAfter = await User.countDocuments();
+      console.log(`[Auto-Export] User count after check: ${countAfter}`);
+    } catch (e) {
+      console.log('[Auto-Export] (Could not log user count:', e.message, ')');
+    }
 
     for (const config of configs) {
       if (config.autoExport && config.autoExport.enabled) {

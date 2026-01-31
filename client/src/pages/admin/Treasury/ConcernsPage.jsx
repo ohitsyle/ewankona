@@ -1,24 +1,31 @@
 // src/pages/admin/Treasury/ConcernsPage.jsx
+// Treasury-specific concerns - matches Motorpool style with All/Assistance/Feedback tabs
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
 import api from '../../../utils/api';
 import { toast } from 'react-toastify';
-import { Search } from 'lucide-react';
+import SearchBar from '../../../components/shared/SearchBar';
+import StatusFilter from '../../../components/shared/StatusFilter';
+import DateRangeFilter from '../../../components/shared/DateRangeFilter';
+import ExportButton from '../../../components/shared/ExportButton';
+import { exportToCSV } from '../../../utils/csvExport';
 
 export default function ConcernsPage() {
   const { theme, isDarkMode } = useTheme();
   const [concerns, setConcerns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'assistance', 'feedback'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [selectedConcern, setSelectedConcern] = useState(null);
-  const [replyText, setReplyText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [viewedConcerns, setViewedConcerns] = useState(() => {
-    // Load viewed concerns from localStorage
-    const saved = localStorage.getItem('viewedConcerns_treasury');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [resolution, setResolution] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
   const intervalRef = useRef(null);
 
   const fetchConcerns = async (silent = false) => {
@@ -26,8 +33,8 @@ export default function ConcernsPage() {
       if (!silent) setLoading(true);
 
       const params = new URLSearchParams();
-      if (statusFilter !== 'all') params.append('status', statusFilter);
-      if (searchTerm) params.append('search', searchTerm);
+      if (statusFilter) params.append('status', statusFilter);
+      if (searchQuery) params.append('search', searchQuery);
 
       const data = await api.get(`/admin/treasury/concerns?${params}`);
       if (data?.concerns) {
@@ -42,74 +49,130 @@ export default function ConcernsPage() {
 
   useEffect(() => {
     fetchConcerns();
-
     intervalRef.current = setInterval(() => fetchConcerns(true), 30000);
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, searchQuery]);
 
-  // Mark concern as viewed
-  const markAsViewed = (concernId) => {
-    if (!viewedConcerns.includes(concernId)) {
-      const updated = [...viewedConcerns, concernId];
-      setViewedConcerns(updated);
-      localStorage.setItem('viewedConcerns_treasury', JSON.stringify(updated));
-    }
-  };
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, activeTab, startDate, endDate]);
 
-  // Check if concern is unread/unseen
-  const isUnread = (concern) => {
-    return !viewedConcerns.includes(concern._id) && concern.status === 'pending';
-  };
-
-  const handleViewConcern = (concern) => {
+  const handleViewDetails = (concern) => {
     setSelectedConcern(concern);
-    markAsViewed(concern._id);
+    setShowDetailsModal(true);
   };
 
-  const handleReply = async () => {
-    if (!replyText.trim() || !selectedConcern) return;
+  const handleOpenResolve = (concern) => {
+    setSelectedConcern(concern);
+    setResolution('');
+    setShowDetailsModal(false);
+    setShowResolveModal(true);
+  };
 
-    setSubmitting(true);
+  const handleStatusChange = async (concern, newStatus) => {
     try {
-      const data = await api.post(`/admin/treasury/concerns/${selectedConcern._id}/reply`, {
-        reply: replyText.trim()
+      if (newStatus === 'resolved') {
+        setSelectedConcern(concern);
+        setShowResolveModal(true);
+        return;
+      }
+
+      const adminData = JSON.parse(localStorage.getItem('adminData') || '{}');
+      const data = await api.patch(`/admin/treasury/concerns/${concern._id}/status`, {
+        status: newStatus,
+        adminName: adminData.firstName ? `${adminData.firstName} ${adminData.lastName || ''}`.trim() : 'Treasury Admin'
       });
 
       if (data?.success) {
-        toast.success('Reply sent');
-        setReplyText('');
-        setSelectedConcern(null);
+        toast.success('Status updated! User has been notified.');
         fetchConcerns(true);
-      } else {
-        toast.error(data?.message || 'Failed to send reply');
       }
     } catch (error) {
-      toast.error('Failed to send reply');
+      toast.error(error.message || 'Failed to update status');
+    }
+  };
+
+  const handleResolve = async () => {
+    if (!resolution.trim()) {
+      toast.error('Please provide a resolution message');
+      return;
+    }
+
+    setResolving(true);
+    try {
+      const adminData = JSON.parse(localStorage.getItem('adminData') || '{}');
+      const data = await api.patch(`/admin/treasury/concerns/${selectedConcern._id}/status`, {
+        status: 'resolved',
+        reply: resolution.trim(),
+        adminName: adminData.firstName ? `${adminData.firstName} ${adminData.lastName || ''}`.trim() : 'Treasury Admin'
+      });
+
+      if (data?.success) {
+        toast.success('Concern resolved! User has been notified via email.');
+        setShowResolveModal(false);
+        fetchConcerns(true);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to resolve concern');
     } finally {
-      setSubmitting(false);
+      setResolving(false);
     }
   };
 
-  const handleUpdateStatus = async (concernId, newStatus) => {
-    try {
-      const data = await api.patch(`/admin/treasury/concerns/${concernId}/status`, {
-        status: newStatus
-      });
-
-      if (data?.success) {
-        toast.success('Status updated');
-        fetchConcerns(true);
-        if (selectedConcern?._id === concernId) {
-          setSelectedConcern(prev => ({ ...prev, status: newStatus }));
-        }
-      }
-    } catch (error) {
-      toast.error('Failed to update status');
-    }
+  const handleExport = () => {
+    const dataToExport = filteredConcerns.map(c => ({
+      ID: c._id?.slice(-8) || '',
+      Type: c.submissionType || 'assistance',
+      User: c.user?.firstName ? `${c.user.firstName} ${c.user.lastName || ''}` : c.userName || '',
+      Subject: c.subject || '',
+      Status: c.status || 'pending',
+      Priority: c.priority || 'medium',
+      Rating: c.rating || '',
+      Date: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ''
+    }));
+    exportToCSV(dataToExport, 'treasury_concerns');
   };
+
+  // Filter concerns
+  const filteredConcerns = concerns.filter(concern => {
+    // Tab filter
+    if (activeTab === 'assistance' && concern.submissionType !== 'assistance') return false;
+    if (activeTab === 'feedback' && concern.submissionType !== 'feedback') return false;
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        concern._id?.toLowerCase().includes(query) ||
+        concern.subject?.toLowerCase().includes(query) ||
+        concern.message?.toLowerCase().includes(query) ||
+        concern.user?.firstName?.toLowerCase().includes(query) ||
+        concern.user?.lastName?.toLowerCase().includes(query) ||
+        concern.userName?.toLowerCase().includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // Status filter
+    if (statusFilter && concern.status !== statusFilter) return false;
+
+    // Date range filter
+    if (startDate || endDate) {
+      const concernDate = new Date(concern.createdAt);
+      if (startDate && concernDate < new Date(startDate)) return false;
+      if (endDate && concernDate > new Date(endDate + 'T23:59:59')) return false;
+    }
+
+    return true;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredConcerns.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const currentItems = filteredConcerns.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -120,173 +183,534 @@ export default function ConcernsPage() {
     }
   };
 
+  if (loading) {
+    return (
+      <div style={{ color: theme.accent.primary }} className="text-center py-20">
+        <div className="animate-spin w-8 h-8 border-4 border-t-transparent rounded-full mx-auto mb-4" style={{ borderColor: `${theme.accent.primary} transparent transparent transparent` }} />
+        Loading concerns...
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div style={{ borderColor: theme.border.primary }} className="mb-6 border-b-2 pb-5">
-        <h2 style={{ color: theme.accent.primary }} className="text-2xl font-bold m-0 mb-2 flex items-center gap-[10px]">
-          <span>💬</span> Concerns
-        </h2>
-        <p style={{ color: theme.text.secondary }} className="text-[13px] m-0">
-          Manage user support tickets and concerns
-        </p>
-      </div>
+        <div className="mb-5">
+          <h2 style={{ color: theme.accent.primary }} className="text-2xl font-bold m-0 mb-2 flex items-center gap-[10px]">
+            <span>💬</span> Concerns & Feedback
+          </h2>
+          <p style={{ color: theme.text.secondary }} className="text-[13px] m-0">
+            {filteredConcerns.length > 0
+              ? `Showing ${startIndex + 1}-${Math.min(startIndex + ITEMS_PER_PAGE, filteredConcerns.length)} of ${filteredConcerns.length} • Page ${currentPage} of ${totalPages}`
+              : `Manage user concerns and feedback • Total: ${concerns.length}`
+            }
+          </p>
+        </div>
 
-      {/* Filters */}
-      <div
-        style={{
-          background: isDarkMode ? 'rgba(15,18,39,0.8)' : theme.bg.card,
-          borderColor: theme.accent.primary
-        }}
-        className="rounded-xl border-2 p-3 mb-5 flex items-center gap-4"
-      >
-        {/* Search Input */}
-        <div className="flex-1 relative">
-          <Search
-            style={{ color: theme.text.tertiary }}
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5"
-          />
-          <input
-            type="text"
-            placeholder="Search concerns..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+        {/* Tabs */}
+        <div className="flex gap-2 mb-5">
+          <button
+            onClick={() => setActiveTab('all')}
             style={{
-              background: 'transparent',
-              color: theme.text.primary,
-              borderColor: 'transparent'
+              padding: '10px 20px',
+              background: activeTab === 'all' ? 'rgba(255,212,28,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'all' ? theme.accent.primary : 'rgba(255,212,28,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'all' ? theme.accent.primary : theme.text.secondary,
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
             }}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm focus:outline-none placeholder:text-gray-500"
+          >
+            All ({concerns.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('assistance')}
+            style={{
+              padding: '10px 20px',
+              background: activeTab === 'assistance' ? 'rgba(59,130,246,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'assistance' ? '#3B82F6' : 'rgba(59,130,246,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'assistance' ? '#3B82F6' : theme.text.secondary,
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            🆘 Assistance ({concerns.filter(c => c.submissionType === 'assistance' || !c.submissionType).length})
+          </button>
+          <button
+            onClick={() => setActiveTab('feedback')}
+            style={{
+              padding: '10px 20px',
+              background: activeTab === 'feedback' ? 'rgba(34,197,94,0.2)' : 'transparent',
+              border: `2px solid ${activeTab === 'feedback' ? '#22C55E' : 'rgba(34,197,94,0.3)'}`,
+              borderRadius: '8px',
+              color: activeTab === 'feedback' ? '#22C55E' : theme.text.secondary,
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            💬 Feedback ({concerns.filter(c => c.submissionType === 'feedback').length})
+          </button>
+        </div>
+
+        {/* Filters Row */}
+        <div className="flex gap-3 items-end flex-wrap">
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by ID, user, subject..."
           />
-        </div>
-
-        {/* Divider */}
-        <div style={{ background: theme.border.primary }} className="w-px h-8" />
-
-        {/* Status Filter */}
-        <div className="flex gap-2">
-          {['all', 'pending', 'in_progress', 'resolved'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              style={{
-                background: statusFilter === status ? theme.accent.primary : (isDarkMode ? 'rgba(30,35,71,0.8)' : '#F9FAFB'),
-                color: statusFilter === status ? (isDarkMode ? '#181D40' : '#FFFFFF') : theme.text.primary,
-                borderColor: theme.border.primary
-              }}
-              className="px-3 py-2 rounded-lg font-semibold text-xs border hover:opacity-80 transition"
-            >
-              {status === 'in_progress' ? 'In Progress' : status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Results Count */}
-      <div className="mb-4">
-        <p style={{ color: theme.text.secondary }} className="text-sm">
-          Showing <span style={{ color: theme.accent.primary }} className="font-bold">{concerns.length}</span> concerns
-          {concerns.filter(c => isUnread(c)).length > 0 && (
-            <span className="ml-2 text-yellow-500">
-              ({concerns.filter(c => isUnread(c)).length} unread)
-            </span>
+          {activeTab !== 'feedback' && (
+            <StatusFilter
+              value={statusFilter}
+              onChange={setStatusFilter}
+              label="Status"
+              options={[
+                { value: 'pending', label: 'Pending' },
+                { value: 'in_progress', label: 'In Progress' },
+                { value: 'resolved', label: 'Resolved' }
+              ]}
+            />
           )}
-        </p>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartChange={setStartDate}
+            onEndChange={setEndDate}
+          />
+          <ExportButton onClick={handleExport} disabled={filteredConcerns.length === 0} />
+        </div>
       </div>
 
-      {/* Concerns List */}
+      {/* Table */}
       <div className="flex-1 overflow-y-auto">
-        <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl border overflow-hidden">
-          {loading ? (
-            <div style={{ color: theme.accent.primary }} className="text-center py-20">
-              <div className="animate-spin w-8 h-8 border-4 border-t-transparent rounded-full mx-auto mb-4" style={{ borderColor: `${theme.accent.primary} transparent transparent transparent` }} />
-              Loading concerns...
-            </div>
-          ) : concerns.length === 0 ? (
-            <div style={{ color: theme.text.tertiary }} className="text-center py-20">
-              <div className="text-5xl mb-4">💬</div>
-              <p>No concerns found</p>
-            </div>
-          ) : (
-            <div className="divide-y" style={{ borderColor: theme.border.primary }}>
-              {concerns.map((concern) => {
-                const unread = isUnread(concern);
-                return (
-                  <div
-                    key={concern._id}
-                    className={`p-4 flex items-center justify-between cursor-pointer transition relative ${unread ? 'concern-glow' : 'hover:bg-white/5'}`}
-                    onClick={() => handleViewConcern(concern)}
-                    style={{
-                      background: unread ? 'rgba(251, 191, 36, 0.08)' : 'transparent'
-                    }}
-                  >
-                    {/* Unread indicator */}
-                    {unread && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500 rounded-r" />
+        {filteredConcerns.length === 0 ? (
+          <div style={{ color: theme.text.tertiary }} className="text-center py-20">
+            <div className="text-5xl mb-4">💬</div>
+            <p>No concerns found</p>
+          </div>
+        ) : (
+          <div style={{ background: theme.bg.card, borderColor: theme.border.primary }} className="rounded-2xl border overflow-hidden">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr style={{ background: isDarkMode ? 'rgba(255,212,28,0.1)' : 'rgba(59,130,246,0.1)' }}>
+                  <th style={{ color: theme.accent.primary }} className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2"
+                      style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}>ID</th>
+                  <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                      className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">User</th>
+                  <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                      className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">Subject</th>
+                  {activeTab === 'all' && (
+                    <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                        className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">Type</th>
+                  )}
+                  {activeTab === 'feedback' ? (
+                    <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                        className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">Rating</th>
+                  ) : (
+                    <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                        className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">Status</th>
+                  )}
+                  <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                      className="text-left p-4 text-[11px] font-extrabold uppercase border-b-2">Date</th>
+                  <th style={{ borderColor: isDarkMode ? 'rgba(255,212,28,0.3)' : 'rgba(59,130,246,0.3)', color: theme.accent.primary }}
+                      className="text-right p-4 text-[11px] font-extrabold uppercase border-b-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentItems.map((concern) => (
+                  <tr key={concern._id} style={{ borderBottom: `1px solid ${theme.border.primary}` }} className="hover:bg-white/5 transition">
+                    <td style={{ color: theme.text.primary }} className="p-4 font-mono text-xs">
+                      {concern._id?.slice(-8)}
+                    </td>
+                    <td style={{ color: theme.text.primary }} className="p-4">
+                      {concern.user?.firstName} {concern.user?.lastName}
+                    </td>
+                    <td style={{ color: theme.text.primary }} className="p-4 max-w-[200px] truncate">
+                      {concern.subject || 'No subject'}
+                    </td>
+                    {activeTab === 'all' && (
+                      <td className="p-4">
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          background: concern.submissionType === 'feedback' ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)',
+                          color: concern.submissionType === 'feedback' ? '#22C55E' : '#3B82F6',
+                          border: `1px solid ${concern.submissionType === 'feedback' ? 'rgba(34,197,94,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                        }}>
+                          {concern.submissionType === 'feedback' ? '💬 Feedback' : '🆘 Assistance'}
+                        </span>
+                      </td>
                     )}
-
-                    <div className="flex-1 pl-2">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span style={{ background: `${getStatusColor(concern.status)}20`, color: getStatusColor(concern.status) }} className="px-2 py-1 rounded text-xs font-semibold capitalize">
-                          {concern.status?.replace('_', ' ')}
-                        </span>
-                        <span style={{ color: theme.text.primary }} className="font-semibold">
-                          {concern.subject}
-                        </span>
-                        {unread && (
-                          <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-500 text-[10px] font-bold rounded-full animate-pulse">
-                            NEW
+                    {activeTab === 'feedback' ? (
+                      <td className="p-4">
+                        <div className="flex items-center gap-1">
+                          {[...Array(5)].map((_, i) => (
+                            <span key={i} style={{
+                              fontSize: '14px',
+                              color: i < (concern.rating || 0) ? '#FFD41C' : 'rgba(255,212,28,0.2)'
+                            }}>
+                              ⭐
+                            </span>
+                          ))}
+                          <span style={{ color: theme.text.muted, marginLeft: '8px', fontSize: '11px' }}>
+                            ({concern.rating || 0}/5)
                           </span>
+                        </div>
+                      </td>
+                    ) : (
+                      <td className="p-4">
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          background: `${getStatusColor(concern.status)}20`,
+                          color: getStatusColor(concern.status),
+                        }}>
+                          {concern.status?.replace('_', ' ') || 'Pending'}
+                        </span>
+                      </td>
+                    )}
+                    <td style={{ color: theme.text.secondary }} className="p-4 text-sm">
+                      {concern.createdAt ? new Date(concern.createdAt).toLocaleDateString() : ''}
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => handleViewDetails(concern)}
+                          style={{
+                            padding: '6px 12px',
+                            background: 'rgba(59,130,246,0.2)',
+                            color: '#3B82F6',
+                            border: '1px solid rgba(59,130,246,0.3)',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: 600
+                          }}
+                        >
+                          View
+                        </button>
+                        {activeTab !== 'feedback' && concern.status !== 'resolved' && (
+                          <>
+                            {concern.status !== 'in_progress' && (
+                              <button
+                                onClick={() => handleStatusChange(concern, 'in_progress')}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: 'rgba(59,130,246,0.2)',
+                                  color: '#3B82F6',
+                                  border: '2px solid #3B82F6',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  fontWeight: 700
+                                }}
+                              >
+                                In Progress
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenResolve(concern)}
+                              style={{
+                                padding: '6px 12px',
+                                background: '#10B981',
+                                color: '#FFFFFF',
+                                border: '2px solid #10B981',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 700
+                              }}
+                            >
+                              Resolve
+                            </button>
+                          </>
                         )}
                       </div>
-                      <p style={{ color: theme.text.secondary }} className="text-sm line-clamp-1">
-                        {concern.message}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2">
-                        <span style={{ color: theme.text.muted }} className="text-xs">
-                          From: {concern.user?.firstName} {concern.user?.lastName}
-                        </span>
-                        <span style={{ color: theme.text.muted }} className="text-xs">
-                          {concern.createdAt ? new Date(concern.createdAt).toLocaleDateString() : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <span style={{ color: theme.text.secondary }} className="text-xl">→</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div style={{ borderColor: theme.border.primary }} className="p-4 border-t flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '8px 16px',
+                    background: currentPage === 1 ? 'rgba(100,100,100,0.2)' : theme.bg.tertiary,
+                    color: currentPage === 1 ? theme.text.muted : theme.accent.primary,
+                    border: `2px solid ${currentPage === 1 ? 'transparent' : theme.accent.primary}`,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  ← Previous
+                </button>
+                <span style={{ color: theme.text.secondary, fontSize: '13px', fontWeight: 600 }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '8px 16px',
+                    background: currentPage === totalPages ? 'rgba(100,100,100,0.2)' : theme.bg.tertiary,
+                    color: currentPage === totalPages ? theme.text.muted : theme.accent.primary,
+                    border: `2px solid ${currentPage === totalPages ? 'transparent' : theme.accent.primary}`,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Concern Detail Modal */}
-      {selectedConcern && (
+      {/* Details Modal */}
+      {showDetailsModal && selectedConcern && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setSelectedConcern(null)}
+          onClick={() => setShowDetailsModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(15,18,39,0.9)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
         >
           <div
-            style={{ background: theme.bg.secondary, borderColor: theme.border.primary }}
-            className="w-full max-w-2xl max-h-[85vh] overflow-auto rounded-2xl border"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              background: isDarkMode ? 'linear-gradient(135deg, #1a1f3a 0%, #0f1227 100%)' : '#FFFFFF',
+              borderRadius: '16px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '85vh',
+              overflow: 'auto',
+              border: `2px solid ${theme.border.primary}`,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+            }}
           >
             {/* Header */}
-            <div style={{ background: theme.bg.tertiary, borderColor: theme.border.primary }} className="p-6 border-b sticky top-0">
-              <div className="flex justify-between items-start">
+            <div style={{ padding: '24px', borderBottom: `2px solid ${theme.border.primary}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span style={{
+                  display: 'inline-block',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  background: `${getStatusColor(selectedConcern.status)}20`,
+                  color: getStatusColor(selectedConcern.status),
+                  marginBottom: '8px'
+                }}>
+                  {selectedConcern.status?.replace('_', ' ') || 'Pending'}
+                </span>
+                <h2 style={{ fontSize: '20px', fontWeight: 700, color: theme.text.primary, margin: 0 }}>
+                  {selectedConcern.subject || 'No Subject'}
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                style={{
+                  background: 'rgba(239,68,68,0.2)',
+                  border: 'none',
+                  color: '#EF4444',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  fontSize: '18px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px' }}>
+              {/* User Info */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: theme.accent.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '18px', color: theme.accent.secondary }}>
+                  {selectedConcern.user?.firstName?.[0] || '?'}
+                </div>
                 <div>
-                  <span style={{ background: `${getStatusColor(selectedConcern.status)}20`, color: getStatusColor(selectedConcern.status) }} className="px-2 py-1 rounded text-xs font-semibold capitalize mb-2 inline-block">
-                    {selectedConcern.status?.replace('_', ' ')}
-                  </span>
-                  <h3 style={{ color: theme.text.primary }} className="text-xl font-bold">
-                    {selectedConcern.subject}
-                  </h3>
+                  <p style={{ color: theme.text.primary, fontWeight: 600, margin: 0 }}>
+                    {selectedConcern.user?.firstName} {selectedConcern.user?.lastName}
+                  </p>
+                  <p style={{ color: theme.text.secondary, fontSize: '13px', margin: 0 }}>
+                    {selectedConcern.user?.email}
+                  </p>
+                </div>
+                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                  <p style={{ color: theme.text.muted, fontSize: '12px', margin: 0 }}>
+                    {selectedConcern.createdAt ? new Date(selectedConcern.createdAt).toLocaleString() : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* Message */}
+              <div style={{ background: theme.bg.tertiary, borderRadius: '12px', padding: '16px', marginBottom: '20px', border: `1px solid ${theme.border.primary}` }}>
+                <p style={{ color: theme.text.primary, whiteSpace: 'pre-wrap', margin: 0, lineHeight: '1.6' }}>
+                  {selectedConcern.message || selectedConcern.description || 'No message provided'}
+                </p>
+              </div>
+
+              {/* Rating if feedback */}
+              {selectedConcern.submissionType === 'feedback' && selectedConcern.rating && (
+                <div style={{ marginBottom: '20px' }}>
+                  <p style={{ color: theme.text.secondary, fontSize: '12px', marginBottom: '8px', fontWeight: 600 }}>Rating</p>
+                  <div className="flex items-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <span key={i} style={{ fontSize: '24px', color: i < selectedConcern.rating ? '#FFD41C' : 'rgba(255,212,28,0.2)' }}>
+                        ⭐
+                      </span>
+                    ))}
+                    <span style={{ color: theme.text.secondary, marginLeft: '8px' }}>
+                      ({selectedConcern.rating}/5)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Admin Response if exists */}
+              {selectedConcern.adminResponse && (
+                <div style={{ background: 'rgba(16,185,129,0.1)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(16,185,129,0.3)' }}>
+                  <p style={{ color: '#10B981', fontSize: '12px', marginBottom: '8px', fontWeight: 700 }}>Admin Response</p>
+                  <p style={{ color: theme.text.primary, margin: 0 }}>
+                    {selectedConcern.adminResponse}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            {selectedConcern.status !== 'resolved' && selectedConcern.submissionType !== 'feedback' && (
+              <div style={{ padding: '20px 24px', borderTop: `2px solid ${theme.border.primary}`, display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                {selectedConcern.status !== 'in_progress' && (
+                  <button
+                    onClick={() => { handleStatusChange(selectedConcern, 'in_progress'); setShowDetailsModal(false); }}
+                    style={{
+                      padding: '12px 24px',
+                      background: 'rgba(59,130,246,0.2)',
+                      color: '#3B82F6',
+                      border: '2px solid #3B82F6',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 700
+                    }}
+                  >
+                    Mark In Progress
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowDetailsModal(false); handleOpenResolve(selectedConcern); }}
+                  style={{
+                    padding: '12px 24px',
+                    background: '#10B981',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    boxShadow: '0 4px 12px rgba(16,185,129,0.4)'
+                  }}
+                >
+                  ✓ Resolve Concern
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Resolve Modal */}
+      {showResolveModal && selectedConcern && (
+        <div
+          onClick={() => setShowResolveModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'rgba(15,18,39,0.9)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: isDarkMode ? 'linear-gradient(135deg, #1a1f3a 0%, #0f1227 100%)' : '#FFFFFF',
+              borderRadius: '16px',
+              maxWidth: '500px',
+              width: '90%',
+              border: `2px solid ${theme.border.primary}`,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+            }}
+          >
+            {/* Header */}
+            <div style={{ padding: '24px', borderBottom: `2px solid rgba(16,185,129,0.3)`, background: 'rgba(16,185,129,0.1)', borderRadius: '16px 16px 0 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#10B981', margin: 0, marginBottom: '8px' }}>
+                    Resolve Concern
+                  </h2>
+                  <p style={{ fontSize: '13px', color: theme.text.secondary, margin: 0 }}>
+                    Mark this concern as resolved and notify the user
+                  </p>
                 </div>
                 <button
-                  onClick={() => setSelectedConcern(null)}
-                  style={{ color: theme.text.secondary }}
-                  className="text-2xl hover:opacity-70"
+                  onClick={() => setShowResolveModal(false)}
+                  style={{
+                    background: 'rgba(239,68,68,0.2)',
+                    border: 'none',
+                    color: '#EF4444',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    fontSize: '18px'
+                  }}
                 >
                   ×
                 </button>
@@ -294,99 +718,96 @@ export default function ConcernsPage() {
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-6">
-              {/* User Info */}
-              <div className="flex items-center gap-4">
-                <div style={{ background: theme.accent.primary, color: theme.accent.secondary }} className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg">
-                  {selectedConcern.user?.firstName?.charAt(0) || '?'}
-                </div>
-                <div>
-                  <p style={{ color: theme.text.primary }} className="font-semibold">
+            <div style={{ padding: '24px' }}>
+              {/* Concern Info */}
+              <div style={{ background: theme.bg.tertiary, borderRadius: '12px', padding: '16px', marginBottom: '20px', border: `1px solid ${theme.border.primary}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ color: theme.text.secondary, fontSize: '12px' }}>From</span>
+                  <span style={{ color: theme.text.primary, fontSize: '14px', fontWeight: 600 }}>
                     {selectedConcern.user?.firstName} {selectedConcern.user?.lastName}
-                  </p>
-                  <p style={{ color: theme.text.secondary }} className="text-sm">
-                    {selectedConcern.user?.email}
-                  </p>
+                  </span>
                 </div>
-                <div className="ml-auto text-right">
-                  <p style={{ color: theme.text.muted }} className="text-xs">
-                    {selectedConcern.createdAt ? new Date(selectedConcern.createdAt).toLocaleString() : ''}
-                  </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: theme.text.secondary, fontSize: '12px' }}>Subject</span>
+                  <span style={{ color: theme.text.primary, fontSize: '14px', fontWeight: 600, maxWidth: '60%', textAlign: 'right' }}>
+                    {selectedConcern.subject}
+                  </span>
                 </div>
               </div>
 
-              {/* Message */}
-              <div style={{ background: theme.bg.tertiary, borderColor: theme.border.primary }} className="p-4 rounded-xl border">
-                <p style={{ color: theme.text.primary }} className="whitespace-pre-wrap">
-                  {selectedConcern.message}
+              {/* Resolution Input */}
+              <div>
+                <label style={{ color: theme.text.primary, fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+                  Resolution Message <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <p style={{ color: theme.text.secondary, fontSize: '13px', marginBottom: '12px' }}>
+                  This message will be sent to the user via email.
                 </p>
-              </div>
-
-              {/* Status Update */}
-              <div>
-                <p style={{ color: theme.text.secondary }} className="text-sm font-semibold mb-2">Update Status</p>
-                <div className="flex gap-2">
-                  {['pending', 'in_progress', 'resolved'].map((status) => (
-                    <button
-                      key={status}
-                      onClick={() => handleUpdateStatus(selectedConcern._id, status)}
-                      style={{
-                        background: selectedConcern.status === status ? getStatusColor(status) : `${getStatusColor(status)}20`,
-                        color: selectedConcern.status === status ? '#FFFFFF' : getStatusColor(status),
-                        borderColor: getStatusColor(status)
-                      }}
-                      className="px-3 py-1.5 rounded-lg text-sm font-semibold border capitalize transition"
-                    >
-                      {status.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Reply Input */}
-              <div>
-                <p style={{ color: theme.text.secondary }} className="text-sm font-semibold mb-2">Send Reply</p>
                 <textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Type your reply..."
-                  rows={4}
-                  style={{ background: theme.bg.tertiary, color: theme.text.primary, borderColor: theme.border.primary }}
-                  className="w-full p-3 rounded-xl border focus:outline-none resize-none"
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value)}
+                  placeholder="Enter your resolution response..."
+                  rows={5}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: `2px solid ${theme.border.primary}`,
+                    background: theme.bg.tertiary,
+                    color: theme.text.primary,
+                    fontSize: '14px',
+                    resize: 'vertical',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                  autoFocus
                 />
-                <div className="flex justify-end mt-3">
-                  <button
-                    onClick={handleReply}
-                    disabled={submitting || !replyText.trim()}
-                    style={{
-                      background: submitting || !replyText.trim() ? 'rgba(100,100,100,0.3)' : theme.accent.primary,
-                      color: submitting || !replyText.trim() ? theme.text.muted : theme.accent.secondary
-                    }}
-                    className="px-6 py-2 rounded-lg font-bold transition"
-                  >
-                    {submitting ? 'Sending...' : 'Send Reply'}
-                  </button>
-                </div>
               </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '20px 24px', borderTop: `2px solid ${theme.border.primary}`, display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowResolveModal(false)}
+                disabled={resolving}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  background: theme.bg.tertiary,
+                  color: theme.text.primary,
+                  border: `1px solid ${theme.border.primary}`,
+                  borderRadius: '8px',
+                  cursor: resolving ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  opacity: resolving ? 0.5 : 1
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResolve}
+                disabled={resolving || !resolution.trim()}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  background: resolving || !resolution.trim() ? 'rgba(16,185,129,0.3)' : '#10B981',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: resolving || !resolution.trim() ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  opacity: resolving || !resolution.trim() ? 0.6 : 1,
+                  boxShadow: resolving || !resolution.trim() ? 'none' : '0 4px 12px rgba(16,185,129,0.4)'
+                }}
+              >
+                {resolving ? '⏳ Resolving...' : '✓ Resolve & Notify User'}
+              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* CSS for glow effect */}
-      <style>{`
-        .concern-glow {
-          animation: glowPulse 2s ease-in-out infinite;
-        }
-        @keyframes glowPulse {
-          0%, 100% {
-            box-shadow: inset 0 0 20px rgba(251, 191, 36, 0.1);
-          }
-          50% {
-            box-shadow: inset 0 0 30px rgba(251, 191, 36, 0.2);
-          }
-        }
-      `}</style>
     </div>
   );
 }

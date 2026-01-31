@@ -1,12 +1,12 @@
-// src/pages/admin/Treasury/MerchantsPage.jsx
-// View merchants and their transaction flow (read-only for Treasury)
+// src/pages/admin/Accounting/MerchantsPage.jsx
+// View merchants and their transaction flow (read-only for Accounting)
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
 import api from '../../../utils/api';
 import { toast } from 'react-toastify';
 import { Search, X, Store, TrendingUp, Calendar, Clock, DollarSign, Users, Truck } from 'lucide-react';
 
-export default function MerchantsPage() {
+export default function AccountingMerchantsPage() {
   const { theme, isDarkMode } = useTheme();
   const [merchants, setMerchants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +23,7 @@ export default function MerchantsPage() {
       if (statusFilter !== 'all') params.append('isActive', statusFilter === 'active');
       if (searchTerm) params.append('search', searchTerm);
 
-      const data = await api.get(`/admin/treasury/merchants?${params}`);
+      const data = await api.get(`/admin/accounting/merchants?${params}`);
       if (data?.merchants) {
         setMerchants(data.merchants);
       }
@@ -332,7 +332,7 @@ function MerchantModal({ merchant, theme, isDarkMode, onClose }) {
   const fetchMerchantDetails = async () => {
     try {
       setLoading(true);
-      const data = await api.get(`/admin/treasury/merchants/${merchant.merchantId}/details?page=${currentPage}&limit=10`);
+      const data = await api.get(`/admin/accounting/merchants/${merchant.merchantId}/details?page=${currentPage}&limit=10`);
       if (data?.success) {
         setDetails(data.merchant);
         setMetrics(data.metrics);

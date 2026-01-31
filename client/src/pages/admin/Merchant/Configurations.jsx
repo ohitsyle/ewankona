@@ -52,7 +52,7 @@ export default function MerchantConfigurationsPage() {
 
   const loadExportHistory = async () => {
     try {
-      const data = await api.get('/admin/configurations/export-history');
+      const data = await api.get('/admin/configurations/export-history?adminRole=merchant');
       setExportHistory(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error loading export history:', error);
@@ -61,7 +61,7 @@ export default function MerchantConfigurationsPage() {
 
   const loadScheduledExports = async () => {
     try {
-      const data = await api.get('/admin/configurations/scheduled-exports');
+      const data = await api.get('/admin/configurations/scheduled-exports?adminRole=merchant');
       setScheduledExports(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error loading scheduled exports:', error);
